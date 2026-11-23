@@ -1,0 +1,397 @@
+/* ==========================================================================
+   Tabs
+   ========================================================================== */
+
+/* 0 → 1: how much content is hidden past the start / end edge.
+   Registered so they can be animated and interpolated as numbers. */
+@property --ds-tabs-start {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+@property --ds-tabs-end {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+.ds-tabs {
+  --ds-tab-height: var(--control-md);
+  --ds-tab-px: var(--space-3);
+  --ds-tab-font: var(--text-base);
+  --ds-tab-leading: var(--leading-base);
+  --ds-tab-gap: var(--space-0-5);
+
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--color-text);
+}
+
+.ds-tabs[data-size="sm"] {
+  --ds-tab-height: var(--control-sm);
+  --ds-tab-px: var(--space-2-5);
+  --ds-tab-font: var(--text-sm);
+  --ds-tab-leading: var(--leading-sm);
+}
+
+.ds-tabs[data-variant="contained"] {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs), var(--highlight);
+  overflow: clip;
+}
+
+/* --------------------------------------------------------------------------
+   List: wrapper (positions chevrons, owns the scroll state)
+   -------------------------------------------------------------------------- */
+
+.ds-tabs-list {
+  /* Faded edge width; focus scrolling keeps tabs out of it (scroll-padding) */
+  --ds-tabs-fade: var(--space-6);
+  /* Part of the fade that is fully transparent (room for the chevron) */
+  --ds-tabs-clear: 0px;
+
+  position: relative;
+  min-width: 0;
+  background: var(--color-surface-sunken);
+  /* Lets this element (and the chevrons) read the scroller's timeline */
+  timeline-scope: --ds-tabs-scroll;
+}
+
+.ds-tabs[data-variant="contained"] > .ds-tabs-list {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ds-tabs[data-variant="plain"] > .ds-tabs-list {
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+/* --------------------------------------------------------------------------
+   Scroller: the actual role="tablist"
+   -------------------------------------------------------------------------- */
+
+.ds-tabs-scroller {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-tab-gap);
+  padding: var(--space-1);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  scroll-padding-inline: var(--ds-tabs-fade);
+  scroll-timeline: --ds-tabs-scroll inline;
+
+  /* Fade an edge only while there's hidden content past it */
+  --_fade-start: rgb(0 0 0 / calc(1 - var(--ds-tabs-start)));
+  --_fade-end: rgb(0 0 0 / calc(1 - var(--ds-tabs-end)));
+  mask-image: linear-gradient(
+    to right,
+    var(--_fade-start) var(--ds-tabs-clear),
+    #000 var(--ds-tabs-fade),
+    #000 calc(100% - var(--ds-tabs-fade)),
+    var(--_fade-end) calc(100% - var(--ds-tabs-clear))
+  );
+}
+
+.ds-tabs-scroller:dir(rtl) {
+  mask-image: linear-gradient(
+    to left,
+    var(--_fade-start) var(--ds-tabs-clear),
+    #000 var(--ds-tabs-fade),
+    #000 calc(100% - var(--ds-tabs-fade)),
+    var(--_fade-end) calc(100% - var(--ds-tabs-clear))
+  );
+}
+
+.ds-tabs-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Tab
+   -------------------------------------------------------------------------- */
+
+.ds-tab {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1-5);
+  height: var(--ds-tab-height);
+  padding-inline: var(--ds-tab-px);
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--ds-tab-font);
+  line-height: var(--ds-tab-leading);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+/* Hairline divider between neighbours; hidden next to the selected or
+   hovered tab so pills never touch a line. */
+.ds-tab + .ds-tab::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(var(--ds-tab-gap) / -2 - 0.5px);
+  top: 30%;
+  bottom: 30%;
+  width: 1px;
+  background: var(--color-border-strong);
+  transition: opacity var(--duration-fast) var(--ease-standard);
+  pointer-events: none;
+}
+
+.ds-tab[aria-selected="true"]::before,
+.ds-tab[aria-selected="true"] + .ds-tab::before,
+.ds-tab:hover::before,
+.ds-tab:hover + .ds-tab::before,
+.ds-tab:focus-visible::before,
+.ds-tab:focus-visible + .ds-tab::before {
+  opacity: 0;
+}
+
+@media (hover: hover) {
+  .ds-tab:hover {
+    color: var(--color-text);
+    background: var(--color-hover);
+  }
+}
+
+.ds-tab:active {
+  background: var(--color-active);
+}
+
+.ds-tab[aria-selected="true"] {
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+  box-shadow:
+    0 0 0 1px var(--color-border),
+    var(--shadow-xs),
+    var(--highlight);
+}
+
+.ds-tab:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 0;
+  z-index: 1;
+}
+
+.ds-tab:disabled {
+  color: var(--color-text-subtle);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------------------
+   Panel
+   -------------------------------------------------------------------------- */
+
+.ds-tab-panel {
+  padding: var(--space-4);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  color: var(--color-text);
+  border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
+}
+
+.ds-tabs[data-variant="plain"] > .ds-tab-panel {
+  padding: var(--space-4) var(--space-1);
+  border-radius: var(--radius-md);
+}
+
+.ds-tab-panel:focus-visible {
+  outline-offset: -2px;
+}
+
+/* --------------------------------------------------------------------------
+   Scroll buttons (chevrons): fine pointers only. Touch gets the fade.
+   -------------------------------------------------------------------------- */
+
+.ds-tabs-scroll-button {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ds-tabs-list {
+    --ds-tabs-fade: var(--space-16);
+    --ds-tabs-clear: var(--space-8);
+  }
+
+  .ds-tabs-scroll-button {
+    --_p: var(--ds-tabs-start);
+
+    /* The hit area covers the whole transparent zone, so there is never an
+       invisible-but-clickable sliver of a tab at the edge. */
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    inset-inline-start: 0;
+    display: grid;
+    place-items: center;
+    width: var(--ds-tabs-clear);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    /* Hidden by default: if nothing overflows there's nothing to scroll */
+    visibility: hidden;
+    /* Fully visible while there's room, dims as the edge is reached */
+    opacity: calc(0.3 + 0.7 * var(--_p));
+    transition: color var(--duration-fast) var(--ease-standard);
+  }
+
+  /* Visible hover chip, smaller than the hit area */
+  .ds-tabs-scroll-button::before {
+    content: "";
+    position: absolute;
+    width: var(--control-xs);
+    height: var(--control-xs);
+    border-radius: var(--radius-sm);
+    transition: background-color var(--duration-fast) var(--ease-standard);
+  }
+
+  .ds-tabs-scroll-button svg {
+    position: relative;
+  }
+
+  .ds-tabs-scroll-button[data-direction="end"] {
+    --_p: var(--ds-tabs-end);
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+  }
+
+  .ds-tabs-scroll-button:dir(rtl) svg {
+    scale: -1 1;
+  }
+
+  /* JS fallback path */
+  .ds-tabs-list[data-overflow-start] > .ds-tabs-scroll-button[data-direction="start"],
+  .ds-tabs-list[data-overflow-end] > .ds-tabs-scroll-button[data-direction="end"] {
+    visibility: visible;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   CSS-only overflow detection (scroll-driven animations)
+   Inactive timeline (= nothing to scroll) → animations do nothing →
+   variables stay 0 → no fade, no chevrons.
+   -------------------------------------------------------------------------- */
+
+@keyframes ds-tabs-start {
+  from {
+    --ds-tabs-start: 0;
+  }
+  to {
+    --ds-tabs-start: 1;
+  }
+}
+@keyframes ds-tabs-end {
+  from {
+    --ds-tabs-end: 1;
+  }
+  to {
+    --ds-tabs-end: 0;
+  }
+}
+@keyframes ds-tabs-reveal {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
+@keyframes ds-tabs-conceal {
+  from {
+    visibility: visible;
+  }
+  to {
+    visibility: hidden;
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  .ds-tabs-list {
+    animation:
+      ds-tabs-start linear both,
+      ds-tabs-end linear both;
+    animation-timeline: --ds-tabs-scroll, --ds-tabs-scroll;
+    /* Ramp over the first / last 24px of scroll */
+    animation-range:
+      0 24px,
+      calc(100% - 24px) 100%;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ds-tabs-scroll-button {
+      animation: ds-tabs-reveal linear both;
+      animation-timeline: --ds-tabs-scroll;
+      animation-range: 0 1px;
+    }
+    .ds-tabs-scroll-button[data-direction="end"] {
+      animation-name: ds-tabs-conceal;
+      animation-range: calc(100% - 1px) 100%;
+    }
+  }
+}
+
+/* While hovered, a chevron never disappears, even at the edge: it just
+   dims (inert, since scrolling further is a no-op). Once the pointer
+   leaves, the rules above hide it. This prevents clicking through to the
+   tab underneath. Must come after the animation rules. */
+@media (hover: hover) and (pointer: fine) {
+  .ds-tabs-scroll-button:hover {
+    animation: none;
+    visibility: visible;
+    color: var(--color-text);
+  }
+  .ds-tabs-scroll-button:hover::before {
+    background: var(--color-hover);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Accessibility modes
+   -------------------------------------------------------------------------- */
+
+/* Windows High Contrast: backgrounds/shadows are dropped, so mark the
+   selected tab with a real border. */
+@media (forced-colors: active) {
+  .ds-tab[aria-selected="true"] {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+  .ds-tab:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
+  .ds-tab:disabled {
+    color: GrayText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-tab,
+  .ds-tab::before,
+  .ds-tabs-scroll-button {
+    transition: none;
+  }
+}

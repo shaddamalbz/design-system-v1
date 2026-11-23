@@ -1,0 +1,33 @@
+/* ==========================================================================
+   AsciiField: the box fills whatever size you give it; the canvas sits
+   behind any children. Glyphs default to the text color (muted), so the
+   field follows light and dark mode.
+   ========================================================================== */
+
+.ds-ascii-field {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+/* Glyph color: muted text by default. Override with the color prop, or set
+   `color` on .ds-ascii-field-canvas. */
+.ds-ascii-field-canvas {
+  color: var(--color-text-muted);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.ds-ascii-field-content {
+  position: relative;
+  height: 100%;
+}
+
+@media (forced-colors: active) {
+  /* Decorative noise only gets in the way of high-contrast reading */
+  .ds-ascii-field-canvas {
+    display: none;
+  }
+}

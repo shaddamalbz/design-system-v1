@@ -1,0 +1,424 @@
+/* ==========================================================================
+   Sidebar
+   --ds-sidebar-w  current visual width (set inline)
+   --ds-sidebar-q  collapse progress: 0 = labels shown, 1 = icon rail.
+                   Registered so it can transition (drives "cascade"/"scrub").
+   ========================================================================== */
+
+@property --ds-sidebar-q {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+.ds-sidebar-layout {
+  display: flex;
+  min-height: 100dvh;
+}
+
+.ds-sidebar-inset {
+  flex: 1;
+  min-width: 0;
+}
+
+.ds-sidebar {
+  --_dur: var(--duration-slower);
+  --_label-dur: 160ms;
+  position: sticky;
+  top: 0;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: var(--ds-sidebar-w, 240px);
+  height: 100dvh;
+  background: var(--color-bg);
+  /* The border doesn't take layout space, so the rail stays exactly railWidth */
+  box-shadow: inset -1px 0 var(--color-border);
+  transition:
+    width var(--_dur) var(--ease-out),
+    --ds-sidebar-q var(--_dur) var(--ease-standard);
+}
+/* While the edge follows the pointer, nothing may lag behind it */
+.ds-sidebar[data-following] {
+  transition: none;
+}
+.ds-sidebar[data-collapsible="false"] {
+  width: auto;
+}
+:root[data-ds-resizing],
+:root[data-ds-resizing] * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.ds-sidebar-header,
+.ds-sidebar-footer {
+  flex: none;
+  padding: var(--space-2);
+  overflow: hidden;
+}
+.ds-sidebar-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-2);
+  overflow: hidden auto;
+}
+.ds-sidebar[data-state="collapsed"] .ds-sidebar-content {
+  scrollbar-width: none; /* a scrollbar would eat the rail */
+}
+.ds-sidebar[data-state="collapsed"] .ds-sidebar-content::-webkit-scrollbar {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   Rows: a fixed icon slot + a label. The slot is exactly as wide as the rail's
+   inner width, so icons never move while the sidebar collapses.
+   -------------------------------------------------------------------------- */
+
+.ds-sidebar-list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ds-sidebar-list[hidden] {
+  display: none;
+}
+
+.ds-sidebar-item,
+.ds-sidebar-group-heading {
+  display: grid;
+  grid-template-columns: var(--control-md) minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  text-align: start;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ds-sidebar-item {
+  height: var(--control-md);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.ds-sidebar-item:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+.ds-sidebar-item[aria-current="page"] {
+  background: var(--color-active);
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+.ds-sidebar-item:focus-visible,
+.ds-sidebar-group-heading:focus-visible {
+  outline-offset: -2px; /* the scroll area would clip an outer ring */
+}
+
+.ds-sidebar-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 16px;
+}
+
+.ds-sidebar-label {
+  min-width: 0;
+  padding-right: var(--space-2);
+  /* Clip, don't ellipsize: the edge sweeping over the text reads as motion,
+     a "…" flickering in and out mid-animation doesn't. */
+  overflow: hidden;
+}
+
+.ds-sidebar-monogram {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+  font-size: 8.5px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+  line-height: 1;
+}
+.ds-sidebar-item[aria-current="page"] .ds-sidebar-monogram {
+  background: var(--color-solid);
+  color: var(--color-on-solid);
+  box-shadow: none;
+}
+
+/* Group heading: small caps label, chevron, count. Becomes a divider in the rail. */
+.ds-sidebar-group-heading {
+  height: var(--control-sm);
+  margin-bottom: var(--space-0-5);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+button.ds-sidebar-group-heading {
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+button.ds-sidebar-group-heading:hover {
+  color: var(--color-text);
+}
+.ds-sidebar-group-heading .ds-sidebar-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.ds-sidebar-count {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-active);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.ds-sidebar-chevron {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  rotate: 90deg;
+  transition: rotate var(--duration-normal) var(--ease-out);
+}
+.ds-sidebar-group-heading[aria-expanded="false"] .ds-sidebar-chevron {
+  rotate: 0deg;
+}
+.ds-sidebar-divider {
+  position: absolute;
+  inset: 50% 8px auto;
+  height: 1px;
+  background: var(--color-border-strong);
+  opacity: 0;
+}
+.ds-sidebar-chevron,
+.ds-sidebar-divider {
+  grid-area: 1 / 1;
+}
+
+/* Sub-heading: sentence case, lighter than the uppercase group heading */
+.ds-sidebar-subgroup + .ds-sidebar-subgroup {
+  margin-top: var(--space-1-5);
+}
+.ds-sidebar-subheading {
+  display: grid;
+  grid-template-columns: var(--control-md) minmax(0, 1fr);
+  align-items: center;
+  height: var(--control-xs);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ds-sidebar-subheading .ds-sidebar-divider {
+  inset-inline: 12px; /* shorter than a group divider */
+}
+
+/* --------------------------------------------------------------------------
+   Transitions
+   -------------------------------------------------------------------------- */
+
+/* ease-out: labels fade fast (0.16s) while the width glides (0.4s) */
+.ds-sidebar[data-transition="ease-out"] .ds-sidebar-label {
+  transition: opacity var(--_label-dur) var(--ease-standard);
+}
+.ds-sidebar[data-transition="ease-out"][data-state="collapsed"] .ds-sidebar-label,
+.ds-sidebar[data-transition="ease-out"][data-state="collapsed"] .ds-sidebar-chevron {
+  opacity: 0;
+}
+.ds-sidebar[data-transition="ease-out"] :is(.ds-sidebar-chevron, .ds-sidebar-divider) {
+  transition:
+    opacity var(--_label-dur) var(--ease-standard),
+    rotate var(--duration-normal) var(--ease-out);
+}
+.ds-sidebar[data-transition="ease-out"][data-state="collapsed"] .ds-sidebar-divider {
+  opacity: 1;
+}
+
+/* cascade: each label has its own slice of q, offset by its index (--i),
+   so they drift left and fade one after another, top first. */
+.ds-sidebar[data-transition="cascade"] .ds-sidebar-label {
+  --_window: 0.5;
+  --_step: calc((1 - var(--_window)) / (var(--n, 2) - 1));
+  --_qi: clamp(0, (var(--ds-sidebar-q) - var(--i, 0) * var(--_step)) / var(--_window), 1);
+  opacity: calc(1 - var(--_qi));
+  translate: calc(var(--_qi) * -12px) 0;
+}
+
+/* scrub: every label fades together, exactly as far as you've dragged */
+.ds-sidebar[data-transition="scrub"] .ds-sidebar-label {
+  opacity: calc(1 - var(--ds-sidebar-q));
+}
+
+.ds-sidebar:is([data-transition="cascade"], [data-transition="scrub"]) .ds-sidebar-chevron {
+  opacity: calc(1 - var(--ds-sidebar-q) * 2);
+}
+.ds-sidebar:is([data-transition="cascade"], [data-transition="scrub"]) .ds-sidebar-divider {
+  opacity: calc(var(--ds-sidebar-q) * 2 - 1);
+}
+
+/* --------------------------------------------------------------------------
+   Resize handle (role="separator")
+   -------------------------------------------------------------------------- */
+
+.ds-sidebar-resizer {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  right: -5px;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.ds-sidebar-resizer[data-edge="min"] {
+  cursor: e-resize;
+}
+.ds-sidebar-resizer[data-edge="max"] {
+  cursor: w-resize;
+}
+.ds-sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-text-muted);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.ds-sidebar-resizer:hover::after,
+.ds-sidebar-resizer[data-active]::after {
+  opacity: 0.5;
+  transition-delay: 80ms; /* don't flash while the pointer just passes over */
+}
+.ds-sidebar-resizer:focus-visible {
+  outline: none;
+}
+.ds-sidebar-resizer:focus-visible::after {
+  opacity: 1;
+  background: var(--color-ring);
+}
+
+/* --------------------------------------------------------------------------
+   Tooltip (collapsed item labels, resize hint)
+   -------------------------------------------------------------------------- */
+
+.ds-sidebar-tip {
+  position: fixed;
+  z-index: 50;
+  translate: 0 -50%;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow:
+    var(--shadow-md),
+    0 0 0 1px var(--color-border);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: ds-sidebar-tip-in var(--duration-fast) var(--ease-out);
+}
+@keyframes ds-sidebar-tip-in {
+  from {
+    opacity: 0;
+    translate: -4px -50%;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Toggle icon: bars (labels) ⇄ dots (icons only).
+   A bar is a 2.5-unit stroke; dasharray "0 10" leaves only its round cap,
+   which is a dot. The divider slides to match the narrower pane.
+   -------------------------------------------------------------------------- */
+
+.ds-sidebar-toggle-icon .ds-sti-bar {
+  stroke-dasharray: 2.5 10;
+  transition: stroke-dasharray var(--duration-normal) var(--ease-out);
+  transition-delay: calc(var(--b, 0) * 30ms);
+}
+.ds-sidebar-toggle-icon .ds-sti-divider {
+  transition: translate var(--duration-normal) var(--ease-out);
+}
+
+/* Collapsed shape: the resting collapsed state, or the hover preview of an expanded one */
+.ds-sidebar-toggle-icon[data-state="collapsed"] .ds-sti-bar {
+  stroke-dasharray: 0 10;
+}
+.ds-sidebar-toggle-icon[data-state="collapsed"] .ds-sti-divider {
+  translate: -2.5px 0;
+}
+.ds-sidebar-trigger:focus-visible:not([data-hold]) [data-state="expanded"] .ds-sti-bar {
+  stroke-dasharray: 0 10;
+}
+.ds-sidebar-trigger:focus-visible:not([data-hold]) [data-state="expanded"] .ds-sti-divider {
+  translate: -2.5px 0;
+}
+.ds-sidebar-trigger:focus-visible:not([data-hold]) [data-state="collapsed"] .ds-sti-bar {
+  stroke-dasharray: 2.5 10;
+}
+.ds-sidebar-trigger:focus-visible:not([data-hold]) [data-state="collapsed"] .ds-sti-divider {
+  translate: 0 0;
+}
+@media (hover: hover) {
+  .ds-sidebar-trigger:hover:not([data-hold]) [data-state="expanded"] .ds-sti-bar {
+    stroke-dasharray: 0 10;
+  }
+  .ds-sidebar-trigger:hover:not([data-hold]) [data-state="expanded"] .ds-sti-divider {
+    translate: -2.5px 0;
+  }
+  .ds-sidebar-trigger:hover:not([data-hold]) [data-state="collapsed"] .ds-sti-bar {
+    stroke-dasharray: 2.5 10;
+  }
+  .ds-sidebar-trigger:hover:not([data-hold]) [data-state="collapsed"] .ds-sti-divider {
+    translate: 0 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Forced colors
+   -------------------------------------------------------------------------- */
+
+@media (forced-colors: active) {
+  .ds-sidebar {
+    border-right: 1px solid CanvasText;
+  }
+  .ds-sidebar-item[aria-current="page"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .ds-sidebar-resizer::after {
+    background: CanvasText;
+  }
+  .ds-sidebar-tip {
+    border: 1px solid CanvasText;
+  }
+}

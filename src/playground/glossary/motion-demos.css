@@ -1,0 +1,411 @@
+/* ==========================================================================
+   Glossary demos for motion terms (prefix gd-): micro-interaction, icon
+   morphing, feedforward, easing, staggered animation, direct manipulation.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Mini window (sidebar illustration): bars = labels, dots = icons only
+   -------------------------------------------------------------------------- */
+
+.gd-mini {
+  --_pane: 44%;
+  --_next: 16%;
+  position: relative;
+  display: flex;
+  width: 220px;
+  height: 132px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.gd-mini[data-collapsed] {
+  --_pane: 16%;
+  --_next: 44%;
+}
+.gd-mini-pane {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  flex: none;
+  width: var(--_pane);
+  padding: 14px 0 0 12px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+  transition: width var(--duration-slower) var(--ease-out);
+}
+.gd-mini-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gd-mini-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--color-text-muted);
+}
+.gd-mini-bar {
+  flex: none;
+  width: 48px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-border-strong);
+  transition: opacity 160ms var(--ease-standard);
+}
+.gd-mini[data-collapsed] .gd-mini-bar {
+  opacity: 0;
+}
+.gd-mini-main {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  flex: 1;
+  padding: 14px;
+}
+.gd-mini-main span {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-active);
+}
+.gd-mini-main span:nth-child(2) {
+  width: 70%;
+}
+/* Feedforward: a dashed outline where the pane will end up */
+.gd-mini-ghost {
+  position: absolute;
+  inset: 4px auto 4px 4px;
+  width: calc(var(--_next) - 8px);
+  border: 1.5px dashed var(--color-text-muted);
+  border-radius: var(--radius-md);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+  pointer-events: none;
+}
+.gd-mini[data-ghost] .gd-mini-ghost {
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   Micro-interaction
+   -------------------------------------------------------------------------- */
+
+.gd-mi {
+  justify-items: stretch;
+}
+.gd-mi-scene {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+}
+.gd-mi-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gd-mi-part {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+  transition:
+    border-color var(--duration-normal) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard);
+}
+.gd-mi-part[data-lit] {
+  border-color: var(--color-text);
+  box-shadow: 0 0 0 1px var(--color-text);
+}
+.gd-mi-num {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--color-active);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+}
+.gd-mi-part[data-lit] .gd-mi-num {
+  background: var(--color-solid);
+  color: var(--color-on-solid);
+}
+
+/* --------------------------------------------------------------------------
+   Icon morphing
+   -------------------------------------------------------------------------- */
+
+.gd-morph-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-8);
+}
+.gd-morph-cell {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  margin: 0;
+}
+.gd-morph-cell figcaption {
+  display: grid;
+  justify-items: center;
+  font-size: var(--text-sm);
+}
+.gd-morph-icon {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 120px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  font-size: 80px;
+}
+.gd-morph-swap * {
+  transition: none !important;
+}
+.gd-morph[data-anatomy] .ds-sti-bar {
+  stroke: light-dark(#d6409f, #ff8dcc);
+}
+.gd-morph[data-anatomy] .ds-sti-divider {
+  stroke: light-dark(#0d74ce, #70b8ff);
+}
+.gd-morph-code {
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--text-xs);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------------------
+   Feedforward
+   -------------------------------------------------------------------------- */
+
+.gd-ff-stage {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-4);
+}
+.gd-ff-stage .gd-mini {
+  width: 180px;
+  height: 110px;
+}
+
+/* --------------------------------------------------------------------------
+   Easing
+   -------------------------------------------------------------------------- */
+
+.gd-ease {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  justify-items: stretch;
+  gap: var(--space-6);
+}
+.gd-ease .gd-morph-code {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+.gd-ease-graph {
+  width: 160px;
+  overflow: visible;
+  fill: none;
+  stroke-linecap: round;
+}
+.gd-ease-graph text {
+  fill: var(--color-text-muted);
+  stroke: none;
+  font-size: 8px;
+}
+.gd-ease-axis {
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+}
+.gd-ease-linear {
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.gd-ease-handle {
+  stroke: var(--color-text-subtle);
+  stroke-width: 1;
+}
+.gd-ease-curve {
+  stroke: var(--color-text);
+  stroke-width: 2.5;
+}
+.gd-ease-tracks {
+  display: grid;
+  gap: var(--space-3);
+}
+.gd-ease-row {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+}
+.gd-ease-track {
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.gd-ease-panel {
+  width: 70%;
+  height: 100%;
+  border-right: 2px solid var(--color-text);
+  background: var(--color-active);
+  transition-property: width;
+}
+.gd-ease-panel[data-collapsed] {
+  width: 12%;
+}
+@media (max-width: 560px) {
+  .gd-ease {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
+  .gd-ease-tracks {
+    width: 100%;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Staggered animation
+   -------------------------------------------------------------------------- */
+
+.gd-stagger {
+  display: grid;
+  gap: 2px;
+  width: min(100%, 260px);
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+.gd-stagger li {
+  display: grid;
+  grid-template-columns: var(--control-md) minmax(0, 1fr) auto;
+  align-items: center;
+  height: var(--control-md);
+  font-size: var(--text-sm);
+}
+.gd-stagger-icon {
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  color: var(--color-text-muted);
+}
+.gd-stagger-label {
+  transition:
+    opacity 200ms var(--ease-standard),
+    translate 200ms var(--ease-out);
+  transition-delay: var(--d);
+}
+.gd-stagger[data-hidden] .gd-stagger-label {
+  opacity: 0;
+  translate: -12px 0;
+}
+.gd-stagger-delay {
+  padding-right: var(--space-2);
+  color: var(--color-text-subtle);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gd-stagger-label {
+    transition-duration: 0ms;
+    transition-delay: 0ms;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Direct manipulation
+   -------------------------------------------------------------------------- */
+
+.gd-dm {
+  position: relative;
+  width: min(100%, 520px);
+  height: 120px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  touch-action: none;
+}
+.gd-dm-panel {
+  display: grid;
+  place-items: center end; /* label sits by the handle, clear of the snap line */
+  padding-right: var(--space-5);
+  width: var(--p);
+  height: 100%;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  background: var(--color-active);
+  overflow: hidden;
+  transition: width var(--duration-slower) var(--ease-out);
+}
+.gd-dm-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gd-dm-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--p);
+  width: 24px;
+  translate: -50% 0;
+  cursor: col-resize;
+  transition: left var(--duration-slower) var(--ease-out);
+}
+/* Direct: never lag behind the pointer */
+.gd-dm[data-dragging] :is(.gd-dm-panel, .gd-dm-handle) {
+  transition: none;
+}
+.gd-dm-handle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 36px;
+  translate: -50% -50%;
+  border-radius: var(--radius-full);
+  background: var(--color-text);
+}
+.gd-dm-handle:focus-visible {
+  outline-offset: -2px;
+}
+.gd-dm-threshold,
+.gd-dm-ghost {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 0;
+  border-left: 1.5px dashed var(--color-text-muted);
+  pointer-events: none;
+}
+.gd-dm-ghost {
+  border-left-style: solid;
+  border-color: var(--color-text);
+  opacity: 0.4;
+}

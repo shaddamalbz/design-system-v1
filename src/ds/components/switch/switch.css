@@ -1,0 +1,106 @@
+/* ==========================================================================
+   Switch (row layout and shared input resets: .ds-choice in field.css)
+
+   The input is the track; ::before is the thumb.
+   Off: a smaller, dark thumb on an outlined track (the dark thumb gives
+   ≥ 3:1 contrast, so the state is clear without color).
+   On: the thumb grows, turns light and slides to the end of a solid track.
+   Pressed: the thumb stretches toward where it's going.
+   ========================================================================== */
+
+.ds-switch {
+  --_w: 36px;
+  --_h: 20px;
+  --_pad: 2px;
+}
+.ds-switch[data-size="sm"] {
+  --_w: 28px;
+  --_h: 16px;
+}
+.ds-switch[data-size="lg"] {
+  --_w: 44px;
+  --_h: 24px;
+}
+
+.ds-switch-input {
+  --_edge: var(--color-border-control);
+  /* thumb size, stretch while pressed, and position */
+  --_s: calc(var(--_h) - var(--_pad) * 2 - 4px);
+  --_stretch: 0px;
+  --_x: 2px;
+  --_thumb: var(--color-text-muted);
+
+  width: var(--_w);
+  height: var(--_h);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--_edge);
+  transition:
+    background-color var(--duration-normal) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard);
+}
+.ds-switch-input::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: var(--_pad);
+  width: calc(var(--_s) + var(--_stretch));
+  height: var(--_s);
+  border-radius: var(--radius-full);
+  background: var(--_thumb);
+  translate: var(--_x) -50%;
+  transition:
+    translate var(--duration-slow) var(--ease-out),
+    width var(--duration-slow) var(--ease-out),
+    height var(--duration-slow) var(--ease-out),
+    background-color var(--duration-normal) var(--ease-standard);
+}
+
+@media (hover: hover) {
+  .ds-switch-input:hover:not(:disabled, :checked) {
+    --_edge: var(--color-text-muted);
+  }
+}
+.ds-switch-input:active:not(:disabled) {
+  --_stretch: 4px;
+}
+
+.ds-switch-input:checked {
+  --_s: calc(var(--_h) - var(--_pad) * 2);
+  /* Anchored to the end: subtract the stretch so it grows toward the start */
+  --_x: calc(var(--_w) - var(--_pad) * 2 - var(--_s) - var(--_stretch));
+  --_thumb: var(--color-on-solid);
+  background: var(--color-solid);
+  box-shadow: none;
+}
+.ds-switch-input:checked::before {
+  box-shadow: var(--shadow-xs);
+}
+
+.ds-switch-input:disabled {
+  opacity: 0.45;
+}
+
+@media (forced-colors: active) {
+  .ds-switch-input {
+    border: 1px solid ButtonText;
+    box-shadow: none;
+  }
+  .ds-switch-input::before {
+    background: ButtonText;
+  }
+  .ds-switch-input:checked {
+    background: Highlight;
+    border-color: Highlight;
+  }
+  .ds-switch-input:checked::before {
+    background: HighlightText;
+  }
+  .ds-switch-input:disabled {
+    border-color: GrayText;
+    opacity: 1;
+  }
+  .ds-switch-input:disabled::before {
+    background: GrayText;
+  }
+}

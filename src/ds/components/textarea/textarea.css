@@ -1,0 +1,44 @@
+/* ==========================================================================
+   Textarea (frame and states from .ds-control-box in field.css)
+   ========================================================================== */
+
+.ds-textarea {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.ds-textarea-control {
+  /* Same padding as an Input of this size, so one line matches its height */
+  --_py: calc((var(--_h) - var(--_leading)) / 2);
+  display: block;
+  width: 100%;
+  min-height: calc(var(--_min-rows, 3) * var(--_leading) + var(--_py) * 2);
+  padding: var(--_py) var(--_px);
+  resize: vertical;
+}
+
+/* Grow with the content where supported: no JS measuring */
+@supports (field-sizing: content) {
+  .ds-textarea[data-auto-resize] .ds-textarea-control {
+    field-sizing: content;
+    max-height: calc(var(--_max-rows, 10) * var(--_leading) + var(--_py) * 2);
+    resize: none;
+  }
+}
+
+.ds-textarea-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--_px) var(--space-1-5);
+  pointer-events: none;
+}
+.ds-textarea-count {
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+.ds-textarea-count[data-limit] {
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}

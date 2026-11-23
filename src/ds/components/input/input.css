@@ -1,0 +1,63 @@
+/* ==========================================================================
+   Input (the frame and states come from .ds-control-box in field.css)
+   ========================================================================== */
+
+.ds-input {
+  height: var(--_h);
+}
+
+.ds-input-control {
+  align-self: stretch;
+  padding: 0 var(--_px);
+}
+/* With a slot, the slot owns the outer padding and the text sits closer */
+.ds-input[data-start] .ds-input-control {
+  padding-inline-start: var(--space-1-5);
+}
+.ds-input[data-end] .ds-input-control {
+  padding-inline-end: var(--space-1-5);
+}
+
+/* Native search clear button: hidden, add your own in `end` if you want one */
+.ds-input-control::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.ds-input-slot {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: stretch;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+.ds-input-slot[data-side="start"] {
+  padding-inline-start: var(--_px);
+}
+.ds-input-slot[data-side="end"] {
+  padding-inline-end: var(--_px);
+}
+.ds-input-slot > .ds-icon {
+  font-size: var(--ds-icon-size);
+}
+
+/* --------------------------------------------------------------------------
+   A button inside the box: inset evenly on all sides, and its radius follows
+   the nested radius rule (inner = outer − inset) so the corners stay parallel.
+   -------------------------------------------------------------------------- */
+.ds-input-slot:has(> .ds-button) {
+  --_inset: 4px;
+  padding-inline-end: var(--_inset);
+}
+.ds-input-slot[data-side="start"]:has(> .ds-button) {
+  padding-inline: var(--_inset) 0;
+}
+.ds-input-slot > .ds-button {
+  --ds-btn-h: calc(var(--_h) - var(--_inset) * 2);
+  --ds-btn-radius: calc(var(--_radius) - var(--_inset));
+}
+.ds-input[data-size="sm"] .ds-input-slot:has(> .ds-button) {
+  --_inset: 3px;
+}

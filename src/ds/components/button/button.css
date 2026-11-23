@@ -1,0 +1,177 @@
+/* ==========================================================================
+   Button
+   ========================================================================== */
+
+.ds-button {
+  /* Size (md) */
+  --ds-btn-h: var(--control-md);
+  --ds-btn-px: var(--space-3); /* label-side padding */
+  --ds-btn-icon-trim: var(--space-0-5); /* taken off the icon side */
+  --ds-btn-gap: var(--space-1-5);
+  --ds-btn-font: var(--text-base);
+  --ds-btn-radius: var(--radius-md);
+  --ds-icon-size: 16px;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-btn-gap);
+  flex: none;
+  height: var(--ds-btn-h);
+  min-width: var(--ds-btn-h);
+  margin: 0;
+  padding: 0 var(--ds-btn-px);
+  border: 0;
+  border-radius: var(--ds-btn-radius);
+  background-color: var(--_bg);
+  box-shadow: var(--_ring, none);
+  color: var(--_fg);
+  font: inherit;
+  font-size: var(--ds-btn-font);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    scale var(--duration-fast) var(--ease-standard);
+}
+
+.ds-button[data-size="sm"] {
+  --ds-btn-h: var(--control-sm);
+  --ds-btn-px: var(--space-2-5);
+  --ds-btn-icon-trim: var(--space-0-5);
+  --ds-btn-gap: var(--space-1-5);
+  --ds-btn-font: var(--text-sm);
+  --ds-btn-radius: var(--radius-sm);
+  --ds-icon-size: 14px;
+}
+
+.ds-button[data-size="lg"] {
+  --ds-btn-h: var(--control-lg);
+  --ds-btn-px: var(--space-4);
+  --ds-btn-icon-trim: var(--space-1);
+  --ds-btn-gap: var(--space-2);
+  --ds-btn-font: var(--text-md);
+  --ds-btn-radius: var(--radius-md);
+  --ds-icon-size: 18px;
+}
+
+/* --------------------------------------------------------------------------
+   1. Optical padding: less padding on the icon's side.
+   --ds-optical (default 1) multiplies every optical correction; set it to 0
+   on an ancestor to compare against the naive version.
+   -------------------------------------------------------------------------- */
+
+.ds-button[data-start-icon] {
+  padding-inline-start: calc(var(--ds-btn-px) - var(--ds-btn-icon-trim) * var(--ds-optical, 1));
+}
+.ds-button[data-end-icon] {
+  padding-inline-end: calc(var(--ds-btn-px) - var(--ds-btn-icon-trim) * var(--ds-optical, 1));
+}
+
+/* Icon-only: a square. Centering is the icon's job (optical nudge). */
+.ds-button[data-icon-only] {
+  width: var(--ds-btn-h);
+  padding: 0;
+}
+
+.ds-button-icon {
+  display: inline-flex;
+  flex: none;
+  font-size: var(--ds-icon-size);
+}
+
+/* 3. Center on the cap height instead of the line box (where supported).
+   No overflow clipping here: the trimmed box is shorter than the glyphs,
+   so clipping would cut off descenders (g, j, p, y). */
+@supports (text-box: trim-both cap alphabetic) {
+  .ds-button-label {
+    text-box: trim-both cap alphabetic;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Variants. Hover/press are overlays, so they work on any fill.
+   -------------------------------------------------------------------------- */
+
+.ds-button[data-variant="solid"] {
+  --_bg: var(--color-solid);
+  --_fg: var(--color-on-solid);
+  --_hover: light-dark(rgb(255 255 255 / 0.14), rgb(0 0 0 / 0.1));
+  --_press: light-dark(rgb(255 255 255 / 0.22), rgb(0 0 0 / 0.18));
+  --_ring: var(--shadow-xs);
+}
+
+.ds-button[data-variant="outline"] {
+  --_bg: var(--color-surface-raised);
+  --_fg: var(--color-text);
+  --_hover: var(--color-hover);
+  --_press: var(--color-active);
+  --_ring: inset 0 0 0 1px var(--color-border-strong), var(--shadow-xs), var(--highlight);
+}
+
+.ds-button[data-variant="ghost"] {
+  --_bg: transparent;
+  --_fg: var(--color-text);
+  --_hover: var(--color-hover);
+  --_press: var(--color-active);
+}
+
+@media (hover: hover) {
+  .ds-button:hover:not(:disabled) {
+    background-image: linear-gradient(var(--_hover), var(--_hover));
+  }
+}
+
+.ds-button:active:not(:disabled) {
+  background-image: linear-gradient(var(--_press), var(--_press));
+  scale: 0.98;
+}
+
+.ds-button:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+.ds-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------------------
+   Accessibility modes
+   -------------------------------------------------------------------------- */
+
+@media (forced-colors: active) {
+  .ds-button {
+    border: 1px solid ButtonText;
+  }
+  .ds-button[data-variant="ghost"] {
+    border-color: transparent;
+  }
+  .ds-button:focus-visible {
+    outline-color: Highlight;
+  }
+  .ds-button:disabled {
+    color: GrayText;
+    border-color: GrayText;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-button {
+    transition: none;
+  }
+  .ds-button:active:not(:disabled) {
+    scale: none;
+  }
+}

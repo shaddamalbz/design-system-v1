@@ -1,0 +1,145 @@
+/* ==========================================================================
+   Tooltip: CSS anchor positioning + position-try-fallbacks, no JS placement.
+   ========================================================================== */
+
+.ds-tooltip-trigger {
+  position: relative; /* only used by the no-anchor fallback */
+  display: inline-flex;
+  anchor-name: var(--ds-tooltip-anchor);
+}
+
+.ds-tooltip {
+  --_gap: 6px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  width: max-content;
+  max-width: min(240px, calc(100vw - 16px));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-solid);
+  color: var(--color-on-solid);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
+  text-align: start;
+  white-space: normal;
+  pointer-events: none;
+
+  /* Hidden until hover / focus. Hiding is quick; showing waits for the delay. */
+  visibility: hidden;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    visibility 0s linear var(--duration-fast);
+}
+
+/* Hover bridge: covers the gap so moving the pointer onto the tooltip
+   doesn't close it (WCAG 1.4.13 "hoverable"). */
+.ds-tooltip::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--_gap) * -1);
+}
+
+/* ---- Showing ---- */
+@media (hover: hover) {
+  .ds-tooltip-trigger:hover > .ds-tooltip {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transition:
+      opacity var(--duration-fast) var(--ease-standard) var(--ds-tooltip-delay, 400ms),
+      visibility 0s linear var(--ds-tooltip-delay, 400ms);
+  }
+}
+/* Keyboard focus: no delay, the user asked for it */
+.ds-tooltip-trigger:has(:focus-visible) > .ds-tooltip,
+.ds-tooltip-trigger[data-open] > .ds-tooltip {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.ds-tooltip-trigger[data-dismissed]:not([data-open]) > .ds-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  transition: none;
+}
+
+.ds-tooltip-kbd {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-on-solid) 16%, transparent);
+  font-family: inherit;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+/* --------------------------------------------------------------------------
+   Placement with anchor positioning.
+   position: fixed so overflow: hidden ancestors can't clip it.
+   position-area picks the side; the fallbacks are tried in order when the
+   tooltip would overflow: flip to the opposite side, then slide along it.
+   -------------------------------------------------------------------------- */
+
+@supports (anchor-name: --a) {
+  .ds-tooltip {
+    position: fixed;
+    position-anchor: var(--ds-tooltip-anchor);
+    margin: var(--_gap);
+  }
+  .ds-tooltip[data-side="top"] {
+    position-area: top;
+    position-try-fallbacks: flip-block, top span-right, top span-left, bottom span-right, bottom span-left;
+  }
+  .ds-tooltip[data-side="bottom"] {
+    position-area: bottom;
+    position-try-fallbacks: flip-block, bottom span-right, bottom span-left, top span-right, top span-left;
+  }
+  .ds-tooltip[data-side="left"] {
+    position-area: left;
+    position-try-fallbacks: flip-inline, top, bottom;
+  }
+  .ds-tooltip[data-side="right"] {
+    position-area: right;
+    position-try-fallbacks: flip-inline, top, bottom;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Fallback (no anchor positioning): the classic absolute tooltip.
+   Fixed side, no flipping, can be clipped by overflow: hidden.
+   -------------------------------------------------------------------------- */
+
+@supports not (anchor-name: --a) {
+  .ds-tooltip {
+    position: absolute;
+  }
+  .ds-tooltip[data-side="top"] {
+    bottom: 100%;
+    left: 50%;
+    translate: -50% calc(var(--_gap) * -1);
+  }
+  .ds-tooltip[data-side="bottom"] {
+    top: 100%;
+    left: 50%;
+    translate: -50% var(--_gap);
+  }
+  .ds-tooltip[data-side="left"] {
+    right: 100%;
+    top: 50%;
+    translate: calc(var(--_gap) * -1) -50%;
+  }
+  .ds-tooltip[data-side="right"] {
+    left: 100%;
+    top: 50%;
+    translate: var(--_gap) -50%;
+  }
+}
+
+@media (forced-colors: active) {
+  .ds-tooltip {
+    border: 1px solid CanvasText;
+  }
+}

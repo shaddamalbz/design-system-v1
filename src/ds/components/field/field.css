@@ -1,0 +1,338 @@
+/* ==========================================================================
+   Field: label, description, error.
+   ========================================================================== */
+
+.ds-field {
+  display: grid;
+  gap: var(--space-1-5);
+  min-width: 0;
+}
+
+.ds-field-label {
+  justify-self: start;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+.ds-field-required {
+  margin-inline-start: var(--space-0-5);
+  color: var(--color-text-muted);
+}
+.ds-field-optional {
+  margin-inline-start: var(--space-1);
+  font-weight: var(--weight-regular);
+  color: var(--color-text-muted);
+}
+
+.ds-field-description {
+  margin-top: calc(var(--space-1) * -1); /* sits with the label, not the control */
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-muted);
+}
+
+/* Icon + text, so the error never relies on color alone (WCAG 1.4.1) */
+.ds-field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-danger);
+  transition:
+    opacity var(--duration-normal) var(--ease-out),
+    translate var(--duration-normal) var(--ease-out);
+}
+/* Fades in when it appears (no JS: @starting-style is the "before" state) */
+@starting-style {
+  .ds-field-error {
+    opacity: 0;
+    translate: 0 -2px;
+  }
+}
+.ds-field-error-icon {
+  flex: none;
+  margin-top: 2px; /* (18px line − 14px icon) / 2: centered on the first line */
+  font-size: 14px;
+}
+
+.ds-field[data-disabled] .ds-field-label {
+  color: var(--color-text-muted);
+}
+
+/* ==========================================================================
+   Control box: the shared frame of Input, Textarea (and later Select).
+   The native element inside has no border/outline; the box draws them,
+   so slots (icons, prefixes, buttons) sit inside the same frame.
+   ========================================================================== */
+
+.ds-control-box {
+  /* Size (md) */
+  --_h: var(--control-md);
+  --_px: var(--space-2-5);
+  --_font: var(--text-base);
+  --_leading: var(--leading-base);
+  --_radius: var(--radius-md);
+  --ds-icon-size: 16px;
+
+  /* Same ≥ 3:1 edge as checkbox/radio/switch (WCAG 1.4.11) */
+  --_border: var(--color-border-control);
+  --_ring: var(--color-ring);
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--_radius);
+  background: var(--color-surface-raised);
+  box-shadow:
+    inset 0 0 0 1px var(--_border),
+    var(--shadow-xs);
+  color: var(--color-text);
+  font-size: var(--_font);
+  line-height: var(--_leading);
+  cursor: text;
+  transition:
+    box-shadow var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+.ds-control-box[data-size="sm"] {
+  --_h: var(--control-sm);
+  --_px: var(--space-2);
+  --_font: var(--text-sm);
+  --_leading: var(--leading-sm);
+  --_radius: var(--radius-sm);
+  --ds-icon-size: 14px;
+}
+.ds-control-box[data-size="lg"] {
+  --_h: var(--control-lg);
+  --_px: var(--space-3);
+  --_font: var(--text-md);
+  --_leading: var(--leading-md);
+  --_radius: var(--radius-md);
+  --ds-icon-size: 18px;
+}
+
+/* The native element: reset, it inherits everything from the box */
+.ds-control-box > :is(input, textarea) {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+/* Muted, not subtle: placeholder text still needs 4.5:1 to be readable */
+.ds-control-box > :is(input, textarea)::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+/* ---- States ---- */
+@media (hover: hover) {
+  .ds-control-box:hover:not(:has(> :disabled)) {
+    --_border: var(--color-text-muted);
+  }
+}
+
+/* Focus: text inputs match :focus-visible on click too, since you type next */
+.ds-control-box:has(> :focus-visible) {
+  outline: 2px solid var(--_ring);
+  outline-offset: 1px;
+}
+
+.ds-control-box:has(> [aria-invalid="true"]) {
+  --_border: var(--color-danger);
+  --_ring: var(--color-danger);
+}
+
+.ds-control-box:has(> :is(input, textarea):read-only:not(:disabled)) {
+  background: var(--color-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--_border);
+}
+
+.ds-control-box:has(> :disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: inset 0 0 0 1px var(--_border);
+}
+.ds-control-box > :disabled {
+  cursor: not-allowed;
+}
+
+/* Older browsers without :has(): keep a focus ring on the element itself */
+@supports not selector(:has(*)) {
+  .ds-control-box > :is(input, textarea):focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Touch devices: iOS zooms the page into inputs under 16px, so never go below */
+@media (pointer: coarse) {
+  .ds-control-box > :is(input, textarea) {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* Windows High Contrast: shadows disappear, so draw a real outline */
+@media (forced-colors: active) {
+  .ds-control-box {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+  .ds-control-box:has(> :focus-visible) {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
+  .ds-control-box:has(> :disabled) {
+    outline-color: GrayText;
+    color: GrayText;
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   Fieldset: legend + description + items + error
+   ========================================================================== */
+
+.ds-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+/* A legend is drawn in the fieldset's border by default; floating it turns
+   it into a normal block so it lays out like a Field label. */
+.ds-fieldset-legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--space-2-5);
+  padding: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+.ds-fieldset-legend + * {
+  clear: both;
+}
+.ds-fieldset-description {
+  margin-top: calc(var(--space-1-5) * -1);
+  margin-bottom: var(--space-3);
+}
+.ds-fieldset-items[data-orientation="vertical"] {
+  display: grid;
+  gap: var(--space-3);
+}
+.ds-fieldset-items[data-orientation="horizontal"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+}
+.ds-fieldset > .ds-field-error {
+  margin-top: var(--space-2-5);
+}
+.ds-fieldset:disabled .ds-fieldset-legend {
+  color: var(--color-text-muted);
+}
+
+/* ==========================================================================
+   Choice row: a small control + label + description + error.
+   Shared by Checkbox, Radio and Switch.
+   ========================================================================== */
+
+.ds-choice {
+  --_font: var(--text-base);
+  --_leading: var(--leading-base);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--space-2);
+  font-size: var(--_font);
+  line-height: var(--_leading);
+  color: var(--color-text);
+}
+.ds-choice[data-size="sm"] {
+  --_font: var(--text-sm);
+  --_leading: var(--leading-sm);
+  column-gap: var(--space-1-5);
+}
+.ds-choice[data-size="lg"] {
+  --_font: var(--text-md);
+  --_leading: var(--leading-md);
+  column-gap: var(--space-2-5);
+}
+/* Label first, control last (settings rows) */
+.ds-choice[data-label-position="start"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-4);
+}
+.ds-choice[data-label-position="start"] > .ds-choice-control {
+  order: 1;
+}
+
+/* As tall as the first line of the label, so the control centers on it */
+.ds-choice-control {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  height: var(--_leading);
+}
+.ds-choice-text {
+  display: grid;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+.ds-choice-label {
+  justify-self: start;
+  cursor: pointer;
+}
+.ds-choice-description {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  color: var(--color-text-muted);
+}
+.ds-choice > .ds-choice-text > .ds-field-error {
+  margin-top: var(--space-1);
+}
+.ds-choice:has(input:disabled) .ds-choice-label {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+/* The native input is the control itself (appearance: none), so focus,
+   keyboard, forms and validation stay native. Shared resets: */
+.ds-choice-input {
+  position: relative;
+  flex: none;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Invisible 24×24 target around small controls (WCAG 2.5.8) */
+.ds-choice-input::after {
+  content: "";
+  position: absolute;
+  inset: 50%;
+  width: max(100%, 24px);
+  height: max(100%, 24px);
+  translate: -50% -50%;
+}
+.ds-choice-input:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+.ds-choice-input[aria-invalid="true"]:focus-visible {
+  outline-color: var(--color-danger);
+}
+.ds-choice-input:disabled {
+  cursor: not-allowed;
+}

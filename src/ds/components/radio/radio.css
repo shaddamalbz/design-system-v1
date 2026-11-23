@@ -1,0 +1,70 @@
+/* ==========================================================================
+   Radio (row layout and shared input resets: .ds-choice in field.css)
+   The dot is an inset box-shadow, so it can grow in with a transition.
+   ========================================================================== */
+
+.ds-radio {
+  --_box: 16px;
+  --_dot: 6px;
+}
+.ds-radio[data-size="sm"] {
+  --_box: 14px;
+  --_dot: 6px;
+}
+.ds-radio[data-size="lg"] {
+  --_box: 20px;
+  --_dot: 8px;
+}
+
+.ds-radio-input {
+  --_edge: var(--color-border-control);
+  width: var(--_box);
+  height: var(--_box);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--_edge);
+  transition:
+    box-shadow var(--duration-normal) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-standard),
+    scale var(--duration-fast) var(--ease-standard);
+}
+@media (hover: hover) {
+  .ds-radio-input:hover:not(:disabled, :checked) {
+    --_edge: var(--color-text-muted);
+  }
+}
+.ds-radio-input:active:not(:disabled) {
+  scale: 0.9;
+}
+/* Checked: a thick solid ring around an on-solid center = the dot */
+.ds-radio-input:checked {
+  background: var(--color-on-solid);
+  box-shadow: inset 0 0 0 calc((var(--_box) - var(--_dot)) / 2) var(--color-solid);
+}
+.ds-radio-input[aria-invalid="true"]:not(:checked) {
+  --_edge: var(--color-danger);
+}
+.ds-radio-input:disabled {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-radio-input:active:not(:disabled) {
+    scale: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .ds-radio-input {
+    border: 1px solid ButtonText;
+    box-shadow: none;
+  }
+  .ds-radio-input:checked {
+    border-color: Highlight;
+    background: radial-gradient(Highlight 0 calc(var(--_dot) / 2), Canvas calc(var(--_dot) / 2 + 0.5px));
+  }
+  .ds-radio-input:disabled {
+    border-color: GrayText;
+    opacity: 1;
+  }
+}

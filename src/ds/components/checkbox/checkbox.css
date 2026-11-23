@@ -1,0 +1,106 @@
+/* ==========================================================================
+   Checkbox (row layout and shared input resets: .ds-choice in field.css)
+   ========================================================================== */
+
+.ds-checkbox {
+  --_box: 16px;
+  --_radius: var(--radius-xs);
+}
+.ds-checkbox[data-size="sm"] {
+  --_box: 14px;
+  --_radius: 3px;
+}
+.ds-checkbox[data-size="lg"] {
+  --_box: 20px;
+  --_radius: 5px;
+}
+
+.ds-checkbox-input {
+  --_edge: var(--color-border-control);
+  width: var(--_box);
+  height: var(--_box);
+  border-radius: var(--_radius);
+  background: var(--color-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--_edge);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    scale var(--duration-fast) var(--ease-standard);
+}
+@media (hover: hover) {
+  .ds-checkbox-input:hover:not(:disabled, :checked, :indeterminate) {
+    --_edge: var(--color-text-muted);
+  }
+}
+/* Pressed: a small squeeze, the box "takes" the click */
+.ds-checkbox-input:active:not(:disabled) {
+  scale: 0.9;
+}
+.ds-checkbox-input:is(:checked, :indeterminate) {
+  background: var(--color-solid);
+  box-shadow: none;
+}
+.ds-checkbox-input[aria-invalid="true"]:not(:checked, :indeterminate) {
+  --_edge: var(--color-danger);
+}
+.ds-checkbox-input:disabled {
+  opacity: 0.45;
+}
+
+/* ---- The marks: drawn in with stroke-dashoffset (pathLength = 1) ---- */
+.ds-checkbox-icon {
+  position: absolute;
+  width: var(--_box);
+  height: var(--_box);
+  /* top-left of the control's grid cell = the input's box */
+  inset: 0;
+  margin: auto;
+  fill: none;
+  stroke: var(--color-on-solid);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.ds-checkbox-icon path {
+  stroke-dasharray: 1 2;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  /* Unchecking is instant: no reason to watch a mark leave */
+  transition:
+    stroke-dashoffset 0s,
+    opacity 0s;
+}
+.ds-checkbox-input:checked:not(:indeterminate) + .ds-checkbox-icon .ds-checkbox-check,
+.ds-checkbox-input:indeterminate + .ds-checkbox-icon .ds-checkbox-dash {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  transition: stroke-dashoffset var(--duration-slow) var(--ease-out) 40ms;
+}
+.ds-checkbox-input:disabled + .ds-checkbox-icon {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-checkbox-input:active:not(:disabled) {
+    scale: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .ds-checkbox-input {
+    border: 1px solid ButtonText;
+    box-shadow: none;
+  }
+  .ds-checkbox-input:is(:checked, :indeterminate) {
+    background: Highlight;
+    border-color: Highlight;
+  }
+  .ds-checkbox-icon {
+    stroke: HighlightText;
+  }
+  .ds-checkbox-input:disabled {
+    border-color: GrayText;
+    opacity: 1;
+  }
+}
