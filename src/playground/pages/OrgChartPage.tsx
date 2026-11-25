@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from "react";
-import { Button, OrgChart, SearchIcon, type OrgChartHandle } from "../../ds";
-import { ApiTable, CodeBlock, Concepts, Kbd, PageHeader, Range, Section, Segmented, Switch, TermLink, TextField } from "../ui";
+import { useMemo, useState } from "react";
+import { OrgChart } from "../../ds";
+import { ApiTable, CodeBlock, Concepts, Kbd, PageHeader, Range, Section, Segmented, Switch, TermLink } from "../ui";
 import { generateOrg } from "./orgData";
 
 type Size = "1000" | "10000" | "50000" | "100000";
@@ -10,30 +10,10 @@ export function OrgChartPage() {
   const [virtualize, setVirtualize] = useState(true);
   const [debug, setDebug] = useState(false);
   const [overscan, setOverscan] = useState(25);
-  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [findNote, setFindNote] = useState("");
-  const chart = useRef<OrgChartHandle>(null);
-  const lastHit = useRef(-1);
 
   const nodes = useMemo(() => generateOrg(Number(size)), [size]);
   const heavy = !virtualize && Number(size) >= 50000;
-
-  const find = () => {
-    const q = query.trim().toLowerCase();
-    if (!q) return;
-    // Searches the data, not the DOM: unrendered people are found too
-    for (let step = 1; step <= nodes.length; step++) {
-      const i = (lastHit.current + step) % nodes.length;
-      if (nodes[i].name.toLowerCase().includes(q)) {
-        lastHit.current = i;
-        chart.current?.focusNode(nodes[i].id);
-        setFindNote(`${nodes[i].name}, ${nodes[i].title}`);
-        return;
-      }
-    }
-    setFindNote(`No one matches “${query}”`);
-  };
 
   const code = `<OrgChart
   nodes={people} // { id, parentId, name, title?, color? }[]
@@ -55,7 +35,8 @@ export function OrgChartPage() {
 
       <div className="pg-playground">
         <OrgChart
-          ref={chart}
+          // A new org starts a fresh chart: search, selection and camera reset together
+          key={size}
           nodes={nodes}
           aria-label="Company org chart"
           height={600}
@@ -67,9 +48,10 @@ export function OrgChartPage() {
           onSelectedChange={setSelected}
         />
         <p className="pg-muted pg-note">
-          Drag to pan, <Kbd>Ctrl</Kbd> + scroll or pinch to zoom, scroll to pan. Click a card, then use the arrow keys to
-          walk the org. Turn on <em>Show culling</em>: cards only exist inside the orange frame, and the blue frame is
-          what must stay covered. Then turn virtualization off at 50k and try the same moves.
+          Drag to pan, <Kbd>Ctrl</Kbd> + scroll or pinch to zoom, scroll to pan. Search from the box in the corner (or
+          press <Kbd>/</Kbd> in the chart): try <em>lead design</em> at 100k, pick <em>Show all on chart</em>, then pick a
+          person and watch the camera fly. Turn on <em>Show culling</em> to see which cards exist, then turn
+          virtualization off at 50k and try the same moves.
         </p>
         {heavy && (
           <p className="pg-note" role="status">
@@ -84,8 +66,6 @@ export function OrgChartPage() {
             onChange={(s) => {
               setSize(s);
               setSelected(null);
-              lastHit.current = -1;
-              setFindNote("");
             }}
             options={[
               { value: "1000", label: "1k" },
@@ -97,21 +77,6 @@ export function OrgChartPage() {
           <Switch label="Virtualize" checked={virtualize} onChange={setVirtualize} />
           <Switch label="Show culling" checked={debug} onChange={setDebug} />
           <Range label="Overscan per side" value={overscan} min={0} max={100} step={5} unit="%" onChange={setOverscan} />
-          <form
-            className="pg-org-find"
-            onSubmit={(e) => {
-              e.preventDefault();
-              find();
-            }}
-          >
-            <TextField label="Find a person" value={query} onChange={setQuery} />
-            <Button type="submit" startIcon={<SearchIcon />}>
-              Find next
-            </Button>
-            <p className="pg-muted pg-org-find-note" aria-live="polite">
-              {findNote}
-            </p>
-          </form>
         </div>
         <CodeBlock code={code} label="Code for this preview" />
       </div>
@@ -157,6 +122,39 @@ export function OrgChartPage() {
             </tbody>
           </table>
         </div>
+      </Section>
+
+      <Section title="Search">
+        <p className="pg-section-desc">
+          Search goes through the data, never the DOM: most cards don't exist as elements, so the browser's find can't
+          see them. The layout already knows where every match is, so the chart flies there and the virtual window mounts
+          the cards as it arrives.
+        </p>
+        <ul className="pg-checklist">
+          <li>
+            <strong>Matching:</strong> every word must appear in the name or title, ignoring case and accents (
+            <em>ines</em> finds Inés). Best first: the name starts with the query, then a word does, then anywhere;
+            higher in the org breaks ties. A counting sort ranks 100k people in one pass.
+          </li>
+          <li>
+            <strong>Highlights at every zoom:</strong> matching cards get an outline and marked letters, the rest fade.
+            Zoomed out, each match becomes a marker at least 5px wide, binned to screen pixels so 80,000 matches cost one
+            pass, not 80,000 rectangles.
+          </li>
+          <li>
+            <strong>Show all on chart</strong> fits the bounding box of every match. Picking one selects it and draws the
+            line from the top of the org down to them.
+          </li>
+          <li>
+            <strong>The flight</strong> follows van Wijk &amp; Nuij's smooth zoom: it zooms out while it travels and
+            back in as it lands, so you see where you went. Longer jumps take longer, up to 1.6 s; under{" "}
+            <TermLink id="reduced-motion">reduced motion</TermLink> it jumps.
+          </li>
+          <li>
+            Typing stays instant: the search renders through <code>useDeferredValue</code>, at lower priority than the
+            keystrokes.
+          </li>
+        </ul>
       </Section>
 
       <Section title="How it works">
@@ -221,7 +219,13 @@ const chart = useRef<OrgChartHandle>(null);
 <OrgChart ref={chart} nodes={people} aria-label="Company org chart" />
 
 chart.current?.focusNode("2"); // select and fly to someone
-chart.current?.fit();          // whole org in view`}
+chart.current?.fit();          // whole org in view
+
+// Search: built in (top left), or drive it yourself
+<OrgChart nodes={people} aria-label="…" query={q} onQueryChange={setQ} />
+<OrgChart nodes={people} aria-label="…" search={false} query="design" /> // highlight only
+<OrgChart nodes={people} aria-label="…"
+  getSearchText={(p) => \`\${p.name} \${p.title} \${p.email}\`} />`}
         />
       </Section>
 
@@ -237,7 +241,11 @@ chart.current?.fit();          // whole org in view`}
             ["debug", "boolean", "false", "Shrinks the culling area inside the viewport and draws the grid cells."],
             ["showStats", "boolean", "false", "Live counters: DOM cards, canvas boxes, connectors, cells, fps."],
             ["selectedId / defaultSelectedId", "string | null", "—", "Selected person (controlled / uncontrolled)."],
-            ["onSelectedChange", "(id: string | null) => void", "—", "Click, arrow keys, Esc, or focusNode()."],
+            ["onSelectedChange", "(id: string | null) => void", "—", "Click, arrow keys, Esc, a search pick, or focusNode()."],
+            ["search", "boolean", "true", "The search field. / or Ctrl+F inside the chart focuses it."],
+            ["query / defaultQuery", "string", '""', "Search text (controlled / uncontrolled). Highlights work without the field."],
+            ["onQueryChange", "(query: string) => void", "—", "Every edit of the search field."],
+            ["getSearchText", "(node) => string", "name + title", "What a node is searched by. Read once per nodes change."],
           ]}
         />
         <ApiTable
@@ -256,6 +264,8 @@ chart.current?.fit();          // whole org in view`}
             ["fit()", "", "", "Zoom out to show everyone."],
             ["zoomBy(factor)", "", "", "Zoom around the center; 2 is twice as close."],
             ["focusNode(id)", "", "", "Select and fly to someone, rendered or not."],
+            ["fitTo(ids)", "", "", "Zoom so all these people fit in view."],
+            ["focusSearch()", "", "", "Move keyboard focus to the search field."],
           ]}
         />
       </Section>
@@ -273,6 +283,15 @@ chart.current?.fit();          // whole org in view`}
           <li>
             <Kbd>Shift</Kbd> + arrows pan, <Kbd>+</Kbd> <Kbd>−</Kbd> zoom, <Kbd>0</Kbd> fits, <Kbd>Esc</Kbd> clears the
             selection. The zoom buttons are real buttons with names.
+          </li>
+          <li>
+            The search is an ARIA combobox: focus stays in the field, <Kbd>↑</Kbd> <Kbd>↓</Kbd> move through results,{" "}
+            <Kbd>Enter</Kbd> flies to one and hands focus to the chart so the arrow keys walk the org from there,{" "}
+            <Kbd>Shift</Kbd> + <Kbd>Enter</Kbd> shows all. The number of matches is announced.
+          </li>
+          <li>
+            <Kbd>/</Kbd> or <Kbd>Ctrl</Kbd> + <Kbd>F</Kbd> inside the chart opens the search instead of the browser's
+            find, which can't see cards that aren't rendered.
           </li>
           <li>The selected card always stays mounted, whatever the viewport.</li>
           <li>Fly-to animations jump instead under reduced motion. Department color is never the only cue.</li>

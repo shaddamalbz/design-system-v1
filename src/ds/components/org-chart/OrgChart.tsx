@@ -4,6 +4,9 @@ import { IconButton } from "../button";
 import { MaximizeIcon, MinusIcon, PlusIcon } from "../../icons";
 import { NODE_H, NODE_W, buildEdges, layoutTree, nodeBoxes, type EdgeGeometry, type TreeLayout } from "./layout";
 import { SpatialGrid } from "./spatial-grid";
+import { EMPTY_RESULT, highlightParts, normalize, runSearch, type SearchResult } from "./search";
+import { OrgChartSearch, type SearchOption } from "./OrgChartSearch";
+import { zoomPath, type View } from "./fly";
 
 /* ==========================================================================
    OrgChart: a pan/zoom org chart that stays smooth at 100k people.
@@ -30,6 +33,12 @@ import { SpatialGrid } from "./spatial-grid";
 
    The camera lives in a ref and is applied straight to the DOM; React only
    hears about it when the set of visible cards changes.
+
+   Search runs on the data (search.ts), not the DOM: most cards don't exist
+   as elements. Matches are highlighted at every detail level (marked cards,
+   then markers binned to screen pixels), picking one flies there along a
+   zoom-out-and-in path (fly.ts), and the line from the top of the org to the
+   selected person is drawn stronger.
    ========================================================================== */
 
 export interface OrgChartNode {
@@ -51,6 +60,10 @@ export interface OrgChartHandle {
   zoomBy(factor: number): void;
   /** Select a node and fly to it. */
   focusNode(id: string): void;
+  /** Zoom so all these nodes fit in view. */
+  fitTo(ids: readonly string[]): void;
+  /** Move keyboard focus to the search field. */
+  focusSearch(): void;
 }
 
 export interface OrgChartProps {
@@ -70,6 +83,17 @@ export interface OrgChartProps {
   selectedId?: string | null;
   defaultSelectedId?: string | null;
   onSelectedChange?: (id: string | null) => void;
+  /** Show the search field (top left). Press / or Ctrl+F inside the chart to reach it. @default true */
+  search?: boolean;
+  /** Search text (controlled). Matches are highlighted even with `search={false}`. */
+  query?: string;
+  defaultQuery?: string;
+  onQueryChange?: (query: string) => void;
+  /**
+   * Text a node is searched by. Read once per `nodes` change.
+   * Ranking favours matches at the start of this text. @default name + " " + title
+   */
+  getSearchText?: (node: OrgChartNode) => string;
   className?: string;
   ref?: React.Ref<OrgChartHandle>;
 }
@@ -79,6 +103,10 @@ const COMPACT_AT = 0.28;
 const MAX_ZOOM = 2;
 const DEBUG_INSET = 0.2;
 const FALLBACK_COLOR = "var(--chart-other)";
+/** Smallest match marker on screen, in px, when cards are smaller than that. */
+const MARKER_MIN = 5;
+/** Opacity of everything that doesn't match while a search is active. */
+const DIM = 0.22;
 /** Overview bitmap budget: 16M pixels (about 64 MB) and a safe canvas side length. */
 const SNAPSHOT_PIXELS = 16_000_000;
 const SNAPSHOT_SIDE = 8192;
@@ -200,6 +228,60 @@ function paintBoxes(ctx: CanvasRenderingContext2D, m: Model, ids: readonly numbe
   });
 }
 
+/**
+ * Marks every match in view, in screen pixels, at least MARKER_MIN wide so a match
+ * stays visible when its card is smaller than a pixel. Matches that land in the same
+ * screen bin are drawn once: 100k matches cost one pass over a typed array, not
+ * 100k rectangles.
+ */
+function paintMatchMarkers(
+  ctx: CanvasRenderingContext2D,
+  m: Model,
+  ranked: Int32Array,
+  cam: Camera,
+  vw: number,
+  vh: number,
+) {
+  const t = m.layout;
+  const { x: tx, y: ty, k } = cam;
+  const bw = Math.max(NODE_W * k, MARKER_MIN);
+  const bh = Math.max(NODE_H * k, MARKER_MIN);
+  const bin = Math.max(2, Math.min(bw, bh));
+  const cols = Math.ceil(vw / bin) + 2;
+  const rows = Math.ceil(vh / bin) + 2;
+  const seen = new Uint8Array(cols * rows);
+  const path = new Path2D();
+  let drawn = 0;
+  for (let n = 0; n < ranked.length; n++) {
+    const i = ranked[n];
+    const cx = (t.x[i] + NODE_W / 2) * k + tx;
+    const cy = (t.y[i] + NODE_H / 2) * k + ty;
+    if (cx < -bw || cy < -bh || cx > vw + bw || cy > vh + bh) continue;
+    const c = Math.min(cols - 1, Math.max(0, Math.floor(cx / bin) + 1));
+    const r = Math.min(rows - 1, Math.max(0, Math.floor(cy / bin) + 1));
+    if (seen[r * cols + c]) continue;
+    seen[r * cols + c] = 1;
+    path.rect(cx - bw / 2, cy - bh / 2, bw, bh);
+    drawn++;
+  }
+  ctx.fill(path);
+  return drawn;
+}
+
+/** Nearest two managers of i, top first, with "…" when there are more. */
+function managersOf(m: Model, i: number): string[] {
+  const path: string[] = [];
+  let p = m.layout.parent[i];
+  while (p !== -1 && path.length < 2) {
+    path.unshift(m.nodes[p].name);
+    p = m.layout.parent[p];
+  }
+  if (p !== -1) path.unshift("…");
+  return path;
+}
+
+const defaultSearchText = (node: OrgChartNode) => (node.title ? `${node.name} ${node.title}` : node.name);
+
 function initials(name: string) {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
@@ -216,27 +298,48 @@ interface CardProps {
   detail: OrgChartDetail;
   reports: number;
   selected: boolean;
+  /** On the line from the top of the org to the selected person. */
+  onPath: boolean;
+  /** "match" / "dim" while a search is active. */
+  search?: "match" | "dim";
+  /** Normalized query, on matching cards: marks the matched letters. */
+  highlight?: string;
 }
 
-const OrgCard = React.memo(function OrgCard({ node, x, y, detail, reports, selected }: CardProps) {
+function Marked({ text, query }: { text: string; query?: string }) {
+  if (!query) return text;
+  return highlightParts(text, query).map((p, i) => (p.hit ? <mark key={i}>{p.text}</mark> : p.text));
+}
+
+const OrgCard = React.memo(function OrgCard({ node, x, y, detail, reports, selected, onPath, search, highlight }: CardProps) {
   return (
     <div
       className="ds-org-card"
       data-detail={detail}
       data-selected={selected ? "" : undefined}
+      data-path={onPath ? "" : undefined}
+      data-search={selected ? undefined : search}
       style={{ left: x, top: y, "--_c": node.color ?? FALLBACK_COLOR } as React.CSSProperties}
     >
       {detail === "full" ? (
         <>
           <span className="ds-org-avatar">{initials(node.name)}</span>
           <span className="ds-org-text">
-            <span className="ds-org-name">{node.name}</span>
-            {node.title && <span className="ds-org-title">{node.title}</span>}
+            <span className="ds-org-name">
+              <Marked text={node.name} query={highlight} />
+            </span>
+            {node.title && (
+              <span className="ds-org-title">
+                <Marked text={node.title} query={highlight} />
+              </span>
+            )}
           </span>
           {reports > 0 && <span className="ds-org-count">{reports}</span>}
         </>
       ) : (
-        <span className="ds-org-name">{node.name}</span>
+        <span className="ds-org-name">
+          <Marked text={node.name} query={highlight} />
+        </span>
       )}
     </div>
   );
@@ -269,10 +372,42 @@ export function OrgChart({
   selectedId: selectedIdProp,
   defaultSelectedId = null,
   onSelectedChange,
+  search = true,
+  query: queryProp,
+  defaultQuery = "",
+  onQueryChange,
+  getSearchText = defaultSearchText,
   className,
   ref,
 }: OrgChartProps) {
   const model = React.useMemo(() => buildModel(nodes), [nodes]);
+
+  /* ---- Search: query → ranked matches, computed off the typing path ----- */
+
+  const [queryInner, setQueryInner] = React.useState(defaultQuery);
+  const query = queryProp !== undefined ? queryProp : queryInner;
+  const setQuery = React.useCallback(
+    (q: string) => {
+      if (queryProp === undefined) setQueryInner(q);
+      onQueryChange?.(q);
+    },
+    [queryProp, onQueryChange],
+  );
+  // Typing stays instant; the search (a few ms at 100k) renders at lower priority
+  const deferredQuery = React.useDeferredValue(query);
+  const searchTextGetter = React.useRef(getSearchText);
+  searchTextGetter.current = getSearchText;
+  const searchText = React.useRef<{ model: Model; text: string[] } | null>(null);
+  const result: SearchResult = React.useMemo(() => {
+    if (!deferredQuery.trim()) return EMPTY_RESULT;
+    // Build the normalized text once per data, on the first search
+    if (searchText.current?.model !== model) {
+      searchText.current = { model, text: model.nodes.map((n) => normalize(searchTextGetter.current(n))) };
+    }
+    return runSearch(searchText.current.text, model.layout.depth, deferredQuery);
+  }, [model, deferredQuery]);
+  const searching = result.query !== "";
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   const [selectedInner, setSelectedInner] = React.useState<string | null>(defaultSelectedId);
   const selectedId = selectedIdProp !== undefined ? selectedIdProp : selectedInner;
@@ -307,13 +442,13 @@ export function OrgChart({
   const frame = React.useRef(0);
   const anim = React.useRef(0);
   const scratch = React.useRef({ edges: [] as number[], nodes: [] as number[] });
-  const stats = React.useRef({ dom: 0, canvas: 0, edges: 0, cells: 0, fps: 0, bitmap: false });
+  const stats = React.useRef({ dom: 0, canvas: 0, edges: 0, cells: 0, fps: 0, bitmap: false, markers: 0 });
   const colorCache = React.useRef(new Map<string, string>());
 
   // Latest props for the frame loop, which runs outside React renders
-  const live = React.useRef({ model, virtualize, overscan, debug, showStats, selected, win });
+  const live = React.useRef({ model, virtualize, overscan, debug, showStats, selected, win, result });
   React.useLayoutEffect(() => {
-    live.current = { model, virtualize, overscan, debug, showStats, selected, win };
+    live.current = { model, virtualize, overscan, debug, showStats, selected, win, result };
   });
 
   /** CSS color (tokens, light-dark()) → a color canvas understands, cached per theme. */
@@ -363,7 +498,17 @@ export function OrgChart({
 
   const draw = React.useCallback(() => {
     frame.current = 0;
-    const { model: m, virtualize: virt, overscan: over, debug: dbg, showStats: hud, selected: sel, win: w } = live.current;
+    const {
+      model: m,
+      virtualize: virt,
+      overscan: over,
+      debug: dbg,
+      showStats: hud,
+      selected: sel,
+      win: w,
+      result: res,
+    } = live.current;
+    const searchOn = res.query !== "" && res.mask.length === m.layout.count;
     const { w: vw, h: vh, dpr } = size.current;
     const canvas = canvasRef.current;
     const world = worldRef.current;
@@ -431,7 +576,9 @@ export function OrgChart({
 
     if (useSnap) {
       ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = searchOn ? DIM : 1;
       ctx.drawImage(snap.canvas, 0, 0, snap.canvas.width, snap.canvas.height, 0, 0, t.width, t.height);
+      ctx.globalAlpha = 1;
       stats.current.edges = Math.max(0, t.count - m.roots.length);
       stats.current.canvas = t.count;
       stats.current.cells = 0;
@@ -447,7 +594,9 @@ export function OrgChart({
         const nodeIds = scratch.current.nodes;
         stats.current.cells = m.nodeGrid.query(vx0, vy0, vx1, vy1, nodeIds);
         stats.current.canvas = nodeIds.length;
+        ctx.globalAlpha = searchOn ? DIM : 1;
         paintBoxes(ctx, m, nodeIds, resolve);
+        ctx.globalAlpha = 1;
       } else {
         stats.current.canvas = 0;
       }
@@ -456,7 +605,26 @@ export function OrgChart({
       stats.current.canvas = 0;
     }
 
-    if (virt && detail === "overview" && sel >= 0) {
+    // The line from the top of the org down to the selected person
+    if (virt && sel >= 0 && sel < t.count && t.parent[sel] !== -1) {
+      const pathIds: number[] = [];
+      for (let v = sel; t.parent[v] !== -1; v = t.parent[v]) pathIds.push(v);
+      paintEdges(ctx, m, pathIds, k >= COMPACT_AT);
+      ctx.lineWidth = 2 / k;
+      ctx.strokeStyle = resolve("var(--color-text)");
+      ctx.stroke();
+    }
+
+    // Matches, when cards are canvas boxes: markers in screen pixels
+    stats.current.markers = 0;
+    if (virt && detail === "overview" && searchOn) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = resolve("var(--color-highlight-strong)");
+      stats.current.markers = paintMatchMarkers(ctx, m, res.ranked, cam.current, vw, vh);
+      ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty);
+    }
+
+    if (virt && detail === "overview" && sel >= 0 && sel < t.count) {
       ctx.lineWidth = 3 / k;
       ctx.strokeStyle = resolve("var(--color-text)");
       ctx.strokeRect(t.x[sel] - 4 / k, t.y[sel] - 4 / k, NODE_W + 8 / k, NODE_H + 8 / k);
@@ -509,6 +677,7 @@ export function OrgChart({
         `DOM cards ${fmt(st.dom)} / ${fmt(t.count)}\n` +
         `canvas boxes ${fmt(st.canvas)} · lines ${fmt(st.edges)}${st.bitmap ? " (bitmap)" : ""}\n` +
         `grid cells ${fmt(st.cells)} · index ${m.buildMs.toFixed(0)} ms\n` +
+        (searchOn ? `matches ${fmt(res.ranked.length)}${st.markers ? ` · markers ${fmt(st.markers)}` : ""}\n` : "") +
         `fps ${st.fps ? Math.round(st.fps) : "–"}`;
     }
   }, [resolve]);
@@ -544,12 +713,17 @@ export function OrgChart({
 
   /* ---- Camera helpers --------------------------------------------------- */
 
-  const fitCamera = React.useCallback((): Camera => {
+  /** Camera that fits a world box with `pad` px around it, never closer than maxK. */
+  const boxCamera = React.useCallback((x0: number, y0: number, x1: number, y1: number, maxK: number, pad: number): Camera => {
     const { w, h } = size.current;
-    const t = live.current.model.layout;
-    const k = Math.min(MAX_ZOOM, Math.min((w - 48) / Math.max(t.width, 1), (h - 48) / Math.max(t.height, 1)));
-    return { k, x: (w - t.width * k) / 2, y: (h - t.height * k) / 2 };
+    const k = Math.min(maxK, (w - pad * 2) / Math.max(x1 - x0, 1), (h - pad * 2) / Math.max(y1 - y0, 1));
+    return { k, x: w / 2 - ((x0 + x1) / 2) * k, y: h / 2 - ((y0 + y1) / 2) * k };
   }, []);
+
+  const fitCamera = React.useCallback((): Camera => {
+    const t = live.current.model.layout;
+    return boxCamera(0, 0, t.width, t.height, MAX_ZOOM, 24);
+  }, [boxCamera]);
 
   const minZoom = React.useCallback(() => Math.min(COMPACT_AT, fitCamera().k * 0.8), [fitCamera]);
 
@@ -567,25 +741,24 @@ export function OrgChart({
         schedule();
         return;
       }
+      // Fly as a view (center + visible width): zoom out while travelling, back in on arrival
+      const { w, h } = size.current;
+      const view = (c: Camera): View => [(w / 2 - c.x) / c.k, (h / 2 - c.y) / c.k, w / c.k];
+      const path = zoomPath(view(from), view(to));
+      // Longer perceived paths get more time, within limits that still feel responsive
+      const duration = Math.min(1600, Math.max(260, path.S * 650));
       const start = performance.now();
-      const duration = 380;
-      // Interpolate zoom in log space so the motion feels even
-      const lk0 = Math.log(from.k);
-      const lk1 = Math.log(to.k);
       const step = (now: number) => {
         // rAF's timestamp is the frame start, which can be earlier than `start`
         const p = Math.min(1, Math.max(0, (now - start) / duration));
-        const e = 1 - Math.pow(1 - p, 3);
-        const k = Math.exp(lk0 + (lk1 - lk0) * e);
-        // Keep the screen point that maps the moving center consistent
-        const { w, h } = size.current;
-        const wx0 = (w / 2 - from.x) / from.k;
-        const wy0 = (h / 2 - from.y) / from.k;
-        const wx1 = (w / 2 - to.x) / to.k;
-        const wy1 = (h / 2 - to.y) / to.k;
-        const wx = wx0 + (wx1 - wx0) * e;
-        const wy = wy0 + (wy1 - wy0) * e;
-        cam.current = { k, x: w / 2 - wx * k, y: h / 2 - wy * k };
+        if (p >= 1) {
+          cam.current = to;
+        } else {
+          const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+          const [cx, cy, vwWorld] = path.at(e);
+          const k = w / vwWorld;
+          cam.current = { k, x: w / 2 - cx * k, y: h / 2 - cy * k };
+        }
         schedule();
         anim.current = p < 1 ? requestAnimationFrame(step) : 0;
       };
@@ -660,6 +833,40 @@ export function OrgChart({
     [select, announce, centerOn],
   );
 
+  /** Select i and fly to it at full detail (search results, focusNode). */
+  const goTo = React.useCallback(
+    (i: number) => {
+      live.current.selected = i;
+      select(live.current.model.nodes[i].id);
+      announce(i);
+      centerOn(i, 1, false);
+    },
+    [select, announce, centerOn],
+  );
+
+  /** Fit a set of node indices in view (one node: fly to it). */
+  const fitIndices = React.useCallback(
+    (ids: ArrayLike<number>) => {
+      if (ids.length === 0) return;
+      if (ids.length === 1) return goTo(ids[0]);
+      const t = live.current.model.layout;
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (let n = 0; n < ids.length; n++) {
+        const i = ids[n];
+        if (t.x[i] < x0) x0 = t.x[i];
+        if (t.y[i] < y0) y0 = t.y[i];
+        if (t.x[i] > x1) x1 = t.x[i];
+        if (t.y[i] > y1) y1 = t.y[i];
+      }
+      animateTo(boxCamera(x0, y0, x1 + NODE_W, y1 + NODE_H, 1, 56));
+      if (liveRef.current) liveRef.current.textContent = `Showing ${ids.length.toLocaleString("en-US")} matches.`;
+    },
+    [goTo, animateTo, boxCamera],
+  );
+
   React.useImperativeHandle(
     ref,
     () => ({
@@ -667,14 +874,20 @@ export function OrgChart({
       zoomBy: zoomCenter,
       focusNode: (id) => {
         const i = live.current.model.index.get(id);
-        if (i === undefined) return;
-        live.current.selected = i;
-        select(id);
-        announce(i);
-        centerOn(i, 1, false);
+        if (i !== undefined) goTo(i);
       },
+      fitTo: (ids) => {
+        const m = live.current.model;
+        const list: number[] = [];
+        for (const id of ids) {
+          const i = m.index.get(id);
+          if (i !== undefined) list.push(i);
+        }
+        fitIndices(list);
+      },
+      focusSearch: () => searchInputRef.current?.focus(),
     }),
-    [animateTo, fitCamera, zoomCenter, select, announce, centerOn],
+    [animateTo, fitCamera, zoomCenter, goTo, fitIndices],
   );
 
   /* ---- Size, data, theme ----------------------------------------------- */
@@ -740,6 +953,11 @@ export function OrgChart({
     schedule();
   }, [virtualize, overscan, debug, showStats, selected, schedule]);
 
+  // New search results: repaint markers and dimming
+  React.useEffect(() => {
+    schedule();
+  }, [result, schedule]);
+
   // Theme switch: canvas colors are resolved values, so drop the cache
   React.useEffect(() => {
     const reset = () => {
@@ -775,6 +993,8 @@ export function OrgChart({
     const root = rootRef.current;
     if (!root) return;
     const onWheel = (e: WheelEvent) => {
+      // The results list scrolls natively
+      if ((e.target as HTMLElement).closest(".ds-org-search")) return;
       e.preventDefault();
       stopAnim();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? size.current.h : 1;
@@ -830,7 +1050,7 @@ export function OrgChart({
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest(".ds-org-tools")) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest(".ds-org-tools, .ds-org-search")) return;
     stopAnim();
     e.currentTarget.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, local(e));
@@ -896,6 +1116,13 @@ export function OrgChart({
     const sel = live.current.selected;
     const { w, h } = size.current;
 
+    // The browser's find can't see cards that aren't rendered: send it to our search
+    if (search && (e.key === "/" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f"))) {
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      return;
+    }
+
     if (e.shiftKey && e.key.startsWith("Arrow")) {
       const step = 120;
       const d = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
@@ -957,6 +1184,14 @@ export function OrgChart({
   /* ---- Render ------------------------------------------------------------ */
 
   const t = model.layout;
+  // Managers above the selected person (the highlighted line runs through them)
+  const pathSet = React.useMemo(() => {
+    const set = new Set<number>();
+    if (selected < 0 || selected >= t.count) return set;
+    for (let v = t.parent[selected]; v !== -1; v = t.parent[v]) set.add(v);
+    return set;
+  }, [selected, t]);
+  const searchOn = searching && result.mask.length === t.count;
   const cards = win.ids.map((i) =>
     i < t.count ? (
       <OrgCard
@@ -967,8 +1202,20 @@ export function OrgChart({
         detail={win.detail}
         reports={t.childStart[i + 1] - t.childStart[i]}
         selected={i === selected}
+        onPath={pathSet.has(i)}
+        search={searchOn ? (result.mask[i] ? "match" : "dim") : undefined}
+        highlight={searchOn && result.mask[i] ? result.query : undefined}
       />
     ) : null,
+  );
+
+  const searchOption = React.useCallback(
+    (n: number): SearchOption => {
+      const i = result.ranked[n];
+      const node = model.nodes[i];
+      return { index: i, name: node.name, title: node.title, path: managersOf(model, i) };
+    },
+    [result, model],
   );
 
   // Without virtualization the connectors are DOM too: one SVG path for all of them
@@ -989,7 +1236,14 @@ export function OrgChart({
     <div
       ref={rootRef}
       className={cx("ds-org", panning && "is-panning", className)}
-      style={{ height, "--ds-org-w": `${NODE_W}px`, "--ds-org-h": `${NODE_H}px` } as React.CSSProperties}
+      style={
+        {
+          height,
+          "--ds-org-height": `${height}px`,
+          "--ds-org-w": `${NODE_W}px`,
+          "--ds-org-h": `${NODE_H}px`,
+        } as React.CSSProperties
+      }
       role="application"
       aria-roledescription="org chart"
       aria-label={ariaLabel}
@@ -1011,6 +1265,24 @@ export function OrgChart({
         {cards}
       </div>
 
+      {search && (
+        <OrgChartSearch
+          inputRef={searchInputRef}
+          value={query}
+          onChange={setQuery}
+          resultQuery={result.query}
+          count={searchOn ? result.ranked.length : 0}
+          option={searchOption}
+          onPick={(i) => {
+            goTo(i);
+            // Back to the chart: arrow keys now walk the org from the person found
+            rootRef.current?.focus({ preventScroll: true });
+          }}
+          onShowAll={() => fitIndices(result.ranked)}
+          onExit={() => rootRef.current?.focus({ preventScroll: true })}
+        />
+      )}
+
       <div className="ds-org-tools">
         <IconButton size="sm" variant="outline" icon={<PlusIcon />} aria-label="Zoom in" onClick={() => zoomCenter(1.5)} />
         <IconButton size="sm" variant="outline" icon={<MinusIcon />} aria-label="Zoom out" onClick={() => zoomCenter(1 / 1.5)} />
@@ -1022,7 +1294,7 @@ export function OrgChart({
       <p id={hintId} className="ds-visually-hidden">
         {model.nodes.length.toLocaleString("en-US")} people. Arrow keys move between people: up to the manager, down to
         the first report, left and right between colleagues. Shift with arrows pans, plus and minus zoom, 0 fits the whole
-        chart.
+        chart.{search ? " Slash or Control F searches." : ""}
       </p>
       <div ref={liveRef} className="ds-visually-hidden" aria-live="polite" />
     </div>

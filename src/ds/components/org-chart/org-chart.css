@@ -131,10 +131,37 @@
   color: var(--color-text-muted);
 }
 
+/* On the line from the top of the org to the selected person */
+.ds-org-card[data-path] {
+  border-color: var(--color-text-muted);
+}
+
+/* Search: matches get a highlight outline and marked letters, the rest steps back */
+.ds-org-card[data-search="match"] {
+  border-color: var(--color-highlight-strong);
+  box-shadow:
+    inset 3px 0 0 var(--_c),
+    inset 0 0 0 1px var(--color-highlight-strong),
+    var(--shadow-xs);
+}
+.ds-org-card[data-search="dim"] {
+  opacity: 0.35;
+}
+.ds-org-card mark {
+  border-radius: 2px;
+  background: var(--color-highlight);
+  color: inherit;
+}
+
 /* Compact: zoomed to 28–60%. One large name, readable at that scale (24px × 0.4 ≈ 10px). */
 .ds-org-card[data-detail="compact"] {
   padding-inline: var(--space-4);
   box-shadow: inset 6px 0 0 var(--_c);
+}
+.ds-org-card[data-detail="compact"][data-search="match"] {
+  box-shadow:
+    inset 6px 0 0 var(--_c),
+    inset 0 0 0 2px var(--color-highlight-strong);
 }
 .ds-org-card[data-detail="compact"][data-selected] {
   box-shadow:
@@ -148,6 +175,92 @@
 }
 
 /* ---- Chrome ---- */
+.ds-org-search {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  /* Leave room for the zoom buttons on the right */
+  width: min(20rem, calc(100% - 8.5rem));
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ds-org-search .ds-input {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.ds-org-search-pop {
+  display: flex;
+  flex-direction: column;
+  /* The chart's height minus the field and margins */
+  max-height: min(24rem, calc(var(--ds-org-height) - 4.5rem));
+  margin-top: var(--space-1);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-lg), var(--highlight);
+}
+.ds-org-search-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.ds-org-search-list {
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.ds-org-search-option {
+  display: grid;
+  gap: 1px;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ds-org-search-option[aria-selected="true"] {
+  background: var(--color-active);
+}
+.ds-org-search-name {
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  font-weight: var(--weight-medium);
+}
+.ds-org-search-title,
+.ds-org-search-path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  color: var(--color-text-muted);
+}
+.ds-org-search-path {
+  color: var(--color-text-subtle);
+}
+.ds-org-search-option mark {
+  border-radius: 2px;
+  background: var(--color-highlight);
+  color: inherit;
+}
+.ds-org-search-more {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
 .ds-org-tools {
   position: absolute;
   top: var(--space-3);
@@ -189,6 +302,19 @@
 @media (forced-colors: active) {
   .ds-org-card {
     border-color: CanvasText;
+  }
+  .ds-org-card[data-search="match"] {
+    outline: 2px solid Mark;
+    outline-offset: -4px;
+  }
+  .ds-org-card mark,
+  .ds-org-search-option mark {
+    background: Mark;
+    color: MarkText;
+  }
+  .ds-org-search-option[aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
   .ds-org-card[data-selected] {
     outline: 2px solid Highlight;
