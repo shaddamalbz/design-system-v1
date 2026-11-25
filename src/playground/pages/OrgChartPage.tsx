@@ -1,9 +1,33 @@
 import { useMemo, useState } from "react";
-import { OrgChart } from "../../ds";
+import {
+  Button,
+  DEFAULT_EXTERNAL_TYPE,
+  OrgChart,
+  insertOrgNode,
+  moveOrgNode,
+  type OrgChartExternalDrop,
+  type OrgChartMove,
+  type OrgChartNode,
+} from "../../ds";
 import { ApiTable, CodeBlock, Concepts, Kbd, PageHeader, Range, Section, Segmented, Switch, TermLink } from "../ui";
 import { generateOrg } from "./orgData";
 
 type Size = "1000" | "10000" | "50000" | "100000";
+
+/* People waiting for a manager: drag them onto the chart, or select a manager and press one. */
+const NEW_HIRES = [
+  { key: "rin", name: "Rin Sato", title: "Designer" },
+  { key: "omar", name: "Omar Farouk", title: "Engineer" },
+  { key: "lucia", name: "Lucía Méndez", title: "Product Manager" },
+  { key: "kofi", name: "Kofi Boateng", title: "Analyst" },
+  { key: "mei", name: "Mei Lin", title: "Account Executive" },
+];
+
+/* Demo rule for canMove: the CEO stays put, and nobody becomes a second top-level person. */
+const canMove = (node: OrgChartNode | null, newParent: OrgChartNode | null) =>
+  newParent !== null && (node === null || node.parentId != null);
+
+const HISTORY_LIMIT = 30;
 
 export function OrgChartPage() {
   const [size, setSize] = useState<Size>("10000");
@@ -11,13 +35,54 @@ export function OrgChartPage() {
   const [debug, setDebug] = useState(false);
   const [overscan, setOverscan] = useState(25);
   const [selected, setSelected] = useState<string | null>(null);
+  const [editable, setEditable] = useState(true);
 
-  const nodes = useMemo(() => generateOrg(Number(size)), [size]);
+  // The chart never edits the data: the page applies each move, and keeps old arrays for undo
+  const generated = useMemo(() => generateOrg(Number(size)), [size]);
+  const [edited, setEdited] = useState<OrgChartNode[] | null>(null);
+  const [history, setHistory] = useState<OrgChartNode[][]>([]);
+  const [placed, setPlaced] = useState<string[]>([]);
+  const [trayNote, setTrayNote] = useState("");
+  const nodes = edited ?? generated;
   const heavy = !virtualize && Number(size) >= 50000;
+
+  const apply = (next: OrgChartNode[]) => {
+    setHistory((h) => [...h.slice(-(HISTORY_LIMIT - 1)), nodes]);
+    setEdited(next);
+  };
+  const undo = () => {
+    const prev = history.at(-1);
+    if (!prev) return;
+    setHistory((h) => h.slice(0, -1));
+    setEdited(prev === generated ? null : prev);
+    setTrayNote("Undone.");
+    // A hire who is no longer in the data goes back to the tray
+    setPlaced((list) => list.filter((key) => prev.some((n) => n.id === `hire-${key}`)));
+  };
+  const resetEdits = () => {
+    setEdited(null);
+    setHistory([]);
+    setPlaced([]);
+    setTrayNote("");
+  };
+
+  const addHire = (key: string, parentId: string, index: number) => {
+    const hire = NEW_HIRES.find((h) => h.key === key);
+    const parent = nodes.find((n) => n.id === parentId);
+    if (!hire || !parent || placed.includes(key)) return;
+    apply(insertOrgNode(nodes, { id: `hire-${key}`, parentId, name: hire.name, title: hire.title, color: parent.color }, index));
+    setPlaced((list) => [...list, key]);
+    setTrayNote(`${hire.name} now reports to ${parent.name}.`);
+  };
+
+  const onMove = (move: OrgChartMove) => apply(moveOrgNode(nodes, move));
+  const onDropExternal = ({ data, parentId, index }: OrgChartExternalDrop) => {
+    if (parentId) addHire(JSON.parse(data).key, parentId, index);
+  };
 
   const code = `<OrgChart
   nodes={people} // { id, parentId, name, title?, color? }[]
-  aria-label="Company org chart"${virtualize ? "" : "\n  virtualize={false}"}${overscan !== 25 ? `\n  overscan={${overscan / 100}}` : ""}${debug ? "\n  debug" : ""}
+  aria-label="Company org chart"${editable ? "\n  editable\n  onMove={(move) => setPeople(moveOrgNode(people, move))}" : ""}${virtualize ? "" : "\n  virtualize={false}"}${overscan !== 25 ? `\n  overscan={${overscan / 100}}` : ""}${debug ? "\n  debug" : ""}
   showStats
 />`;
 
@@ -38,6 +103,10 @@ export function OrgChartPage() {
           // A new org starts a fresh chart: search, selection and camera reset together
           key={size}
           nodes={nodes}
+          editable={editable}
+          canMove={canMove}
+          onMove={onMove}
+          onDropExternal={onDropExternal}
           aria-label="Company org chart"
           height={600}
           virtualize={virtualize}
@@ -53,6 +122,22 @@ export function OrgChartPage() {
           person and watch the camera fly. Turn on <em>Show culling</em> to see which cards exist, then turn
           virtualization off at 50k and try the same moves.
         </p>
+        {editable && (
+          <NewHiresTray
+            hires={NEW_HIRES.filter((h) => !placed.includes(h.key))}
+            note={trayNote}
+            changes={history.length}
+            onPlace={(key) => {
+              const parent = selected ? nodes.find((n) => n.id === selected) : undefined;
+              if (!parent) return setTrayNote("Select a manager in the chart first.");
+              const reports = nodes.filter((n) => n.parentId === parent.id).length;
+              addHire(key, parent.id, reports);
+            }}
+            selectedName={selected ? nodes.find((n) => n.id === selected)?.name : undefined}
+            onUndo={undo}
+            onReset={resetEdits}
+          />
+        )}
         {heavy && (
           <p className="pg-note" role="status">
             Virtualization is off: all {Number(size).toLocaleString("en-US")} cards are DOM. The first render can freeze
@@ -66,6 +151,7 @@ export function OrgChartPage() {
             onChange={(s) => {
               setSize(s);
               setSelected(null);
+              resetEdits();
             }}
             options={[
               { value: "1000", label: "1k" },
@@ -74,6 +160,7 @@ export function OrgChartPage() {
               { value: "100000", label: "100k" },
             ]}
           />
+          <Switch label="Editable" checked={editable} onChange={setEditable} />
           <Switch label="Virtualize" checked={virtualize} onChange={setVirtualize} />
           <Switch label="Show culling" checked={debug} onChange={setDebug} />
           <Range label="Overscan per side" value={overscan} min={0} max={100} step={5} unit="%" onChange={setOverscan} />
@@ -122,6 +209,39 @@ export function OrgChartPage() {
             </tbody>
           </table>
         </div>
+      </Section>
+
+      <Section title="Restructuring">
+        <p className="pg-section-desc">
+          With <code>editable</code>, people can change who reports to whom. The chart reports each move and never edits
+          the data itself, so undo, saving and permissions stay with the app.
+        </p>
+        <ul className="pg-checklist">
+          <li>
+            <strong>Drag a card</strong> onto someone to make them the manager, or onto a card's edge to place it next to
+            that colleague (left/right in a row, top/bottom in a stacked team). The whole team moves along. On touch,
+            press and hold to pick a card up; a quick swipe still pans.
+          </li>
+          <li>
+            <strong>Drop targets come from the spatial index,</strong> the same point query clicks use, so they work on
+            DOM cards, on canvas boxes zoomed out, and on cards that scrolled in mid-drag. Drag near an edge and the chart
+            pans toward it.
+          </li>
+          <li>
+            <strong>Rules:</strong> nobody can move into their own team (a walk up the parent chain), and{" "}
+            <code>canMove</code> can veto anything else. In this demo the CEO stays put and nobody becomes a second
+            top-level person: try it and the target turns red.
+          </li>
+          <li>
+            <strong>Drag in from outside</strong> with native drag and drop: anything that puts{" "}
+            <code>{DEFAULT_EXTERNAL_TYPE}</code> data on the drag is accepted, like the new hires above.
+          </li>
+          <li>
+            <strong>After a move,</strong> the app passes new <code>nodes</code>; the layout and index rebuild (about 30
+            ms at 10k, 0.3 s at 100k), the camera stays anchored on the person who moved, and the cards in view slide
+            from their old places. Only visible cards animate, so it's ~100 animations, never 100k.
+          </li>
+        </ul>
       </Section>
 
       <Section title="Search">
@@ -221,6 +341,20 @@ const chart = useRef<OrgChartHandle>(null);
 chart.current?.focusNode("2"); // select and fly to someone
 chart.current?.fit();          // whole org in view
 
+// Restructuring: the chart reports moves, the app applies them
+<OrgChart
+  nodes={people}
+  aria-label="Company org chart"
+  editable
+  canMove={(person, newManager) => newManager !== null}
+  onMove={(move) => setPeople(moveOrgNode(people, move))}
+  onDropExternal={({ data, parentId, index }) =>
+    setPeople(insertOrgNode(people, { ...JSON.parse(data), parentId }, index))}
+/>
+// Anything draggable can feed it
+<li draggable onDragStart={(e) =>
+  e.dataTransfer.setData("application/x-org-node", JSON.stringify(person))} />
+
 // Search: built in (top left), or drive it yourself
 <OrgChart nodes={people} aria-label="…" query={q} onQueryChange={setQ} />
 <OrgChart nodes={people} aria-label="…" search={false} query="design" /> // highlight only
@@ -246,6 +380,11 @@ chart.current?.fit();          // whole org in view
             ["query / defaultQuery", "string", '""', "Search text (controlled / uncontrolled). Highlights work without the field."],
             ["onQueryChange", "(query: string) => void", "—", "Every edit of the search field."],
             ["getSearchText", "(node) => string", "name + title", "What a node is searched by. Read once per nodes change."],
+            ["editable", "boolean", "false", "Drag cards, drop from outside, M and Alt + arrows. Needs onMove."],
+            ["canMove", "(node, newParent) => boolean", "—", "Veto a move. node is null for an outside drop, newParent null for the top level."],
+            ["onMove", "(move: { id, parentId, index }) => void", "—", "Apply it to nodes; moveOrgNode does. index counts the new manager's reports without the mover."],
+            ["onDropExternal", "(drop: { data, parentId, index }) => void", "—", "Outside data was dropped; insertOrgNode adds it."],
+            ["externalType", "string", `"${DEFAULT_EXTERNAL_TYPE}"`, "dataTransfer type outside drags must carry."],
           ]}
         />
         <ApiTable
@@ -266,6 +405,13 @@ chart.current?.fit();          // whole org in view
             ["focusNode(id)", "", "", "Select and fly to someone, rendered or not."],
             ["fitTo(ids)", "", "", "Zoom so all these people fit in view."],
             ["focusSearch()", "", "", "Move keyboard focus to the search field."],
+          ]}
+        />
+        <ApiTable
+          caption="Helpers"
+          rows={[
+            ["moveOrgNode(nodes, move)", "→ nodes", "", "New array with the move applied; the old one is untouched (keep it for undo)."],
+            ["insertOrgNode(nodes, node, index)", "→ nodes", "", "New array with node placed at index among its manager's reports."],
           ]}
         />
       </Section>
@@ -293,10 +439,86 @@ chart.current?.fit();          // whole org in view
             <Kbd>/</Kbd> or <Kbd>Ctrl</Kbd> + <Kbd>F</Kbd> inside the chart opens the search instead of the browser's
             find, which can't see cards that aren't rendered.
           </li>
+          <li>
+            Every drag has a keyboard way (WCAG 2.5.7): select someone and press <Kbd>M</Kbd>, choose the new manager
+            with the arrow keys or the search, then <Kbd>Enter</Kbd>; <Kbd>Esc</Kbd> cancels. Each step is announced
+            (&ldquo;Diego Lindqvist. Press Enter: Zoe Zhou will report to them.&rdquo;).
+          </li>
+          <li>
+            One-step moves: <Kbd>Alt</Kbd> + <Kbd>←</Kbd> <Kbd>→</Kbd> reorder among colleagues, <Kbd>Alt</Kbd> +{" "}
+            <Kbd>↑</Kbd> moves next to the manager, <Kbd>Alt</Kbd> + <Kbd>↓</Kbd> under the previous colleague.
+          </li>
+          <li>New hires in the tray are buttons too: select a manager, then press one to add them there.</li>
           <li>The selected card always stays mounted, whatever the viewport.</li>
           <li>Fly-to animations jump instead under reduced motion. Department color is never the only cue.</li>
         </ul>
       </Section>
     </>
+  );
+}
+
+function NewHiresTray({
+  hires,
+  note,
+  changes,
+  selectedName,
+  onPlace,
+  onUndo,
+  onReset,
+}: {
+  hires: { key: string; name: string; title: string }[];
+  note: string;
+  changes: number;
+  selectedName?: string;
+  onPlace: (key: string) => void;
+  onUndo: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <section className="pg-org-tray" aria-label="New hires">
+      <div className="pg-org-tray-head">
+        <h3>New hires</h3>
+        <p className="pg-muted">
+          Drag one onto a manager in the chart, or press one to add them under{" "}
+          {selectedName ? <strong>{selectedName}</strong> : "the selected person"}.
+        </p>
+      </div>
+      {hires.length ? (
+        <ul className="pg-org-tray-list">
+          {hires.map((h) => (
+            <li key={h.key}>
+              <button
+                type="button"
+                className="pg-org-hire"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(DEFAULT_EXTERNAL_TYPE, JSON.stringify({ key: h.key }));
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
+                onClick={() => onPlace(h.key)}
+              >
+                <span className="pg-org-hire-name">{h.name}</span>
+                <span className="pg-muted">{h.title}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="pg-muted">Everyone has a manager.</p>
+      )}
+      <div className="pg-org-tray-foot">
+        <p className="pg-muted" aria-live="polite">
+          {note || (changes ? `${changes} change${changes === 1 ? "" : "s"}` : "No changes yet")}
+        </p>
+        <div className="pg-org-tray-actions">
+          <Button size="sm" onClick={onUndo} disabled={!changes}>
+            Undo
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onReset} disabled={!changes}>
+            Reset
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }

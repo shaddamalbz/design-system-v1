@@ -2,11 +2,22 @@ import * as React from "react";
 import { cx } from "../../utils/cx";
 import { IconButton } from "../button";
 import { MaximizeIcon, MinusIcon, PlusIcon } from "../../icons";
-import { NODE_H, NODE_W, buildEdges, layoutTree, nodeBoxes, type EdgeGeometry, type TreeLayout } from "./layout";
+import {
+  NODE_H,
+  NODE_W,
+  buildEdges,
+  layoutTree,
+  newChildSlot,
+  nodeBoxes,
+  type EdgeGeometry,
+  type TreeLayout,
+} from "./layout";
 import { SpatialGrid } from "./spatial-grid";
 import { EMPTY_RESULT, highlightParts, normalize, runSearch, type SearchResult } from "./search";
 import { OrgChartSearch, type SearchOption } from "./OrgChartSearch";
 import { zoomPath, type View } from "./fly";
+import { findDrop, inSubtree, resolveDrop, stackedSiblings, type Drop, type DropKind } from "./drop";
+import type { OrgChartExternalDrop, OrgChartMove } from "./edit";
 
 /* ==========================================================================
    OrgChart: a pan/zoom org chart that stays smooth at 100k people.
@@ -39,6 +50,14 @@ import { zoomPath, type View } from "./fly";
    then markers binned to screen pixels), picking one flies there along a
    zoom-out-and-in path (fly.ts), and the line from the top of the org to the
    selected person is drawn stronger.
+
+   Editing (editable): drag a card onto someone to make them the manager, or
+   onto a card's edge to place them next to a colleague; drag in data from
+   outside; or move by keyboard (M, Alt + arrows). Drop targets come from the
+   same spatial index as clicks (drop.ts). The chart reports moves (onMove)
+   and never edits `nodes` itself; after the app applies one, the camera
+   stays anchored on the moved person and visible cards slide to their new
+   places.
    ========================================================================== */
 
 export interface OrgChartNode {
@@ -94,6 +113,19 @@ export interface OrgChartProps {
    * Ranking favours matches at the start of this text. @default name + " " + title
    */
   getSearchText?: (node: OrgChartNode) => string;
+  /**
+   * Let people restructure the org: drag cards, drop data from outside, or move by keyboard
+   * (M, Alt + arrows). Moves are reported through onMove; apply them to `nodes` yourself.
+   */
+  editable?: boolean;
+  /** Veto a move or drop. `node` is null for a drop from outside; `newParent` is null for the top level. */
+  canMove?: (node: OrgChartNode | null, newParent: OrgChartNode | null) => boolean;
+  /** A move to apply to `nodes` (moveOrgNode does it). */
+  onMove?: (move: OrgChartMove) => void;
+  /** Data dragged in from outside, carrying `externalType`, was dropped on the chart. */
+  onDropExternal?: (drop: OrgChartExternalDrop) => void;
+  /** dataTransfer type that outside drags must carry to be accepted. @default "application/x-org-node" */
+  externalType?: string;
   className?: string;
   ref?: React.Ref<OrgChartHandle>;
 }
@@ -107,6 +139,19 @@ const FALLBACK_COLOR = "var(--chart-other)";
 const MARKER_MIN = 5;
 /** Opacity of everything that doesn't match while a search is active. */
 const DIM = 0.22;
+/** The preview trails the pointer by this much (px), so the pointer tip and the target stay visible. */
+const TRAIL = 14;
+/** The dragged card is shown at the zoom it was picked up at, kept within readable bounds. */
+const PREVIEW_MIN = 0.6;
+const PREVIEW_MAX = 1;
+/** Touch: hold this long on a card to pick it up (a quick swipe still pans). */
+const LONG_PRESS = 450;
+/** While dragging, this close to an edge (px) pans the chart, up to EDGE_SPEED px per frame. */
+const EDGE = 48;
+const EDGE_SPEED = 18;
+export const DEFAULT_EXTERNAL_TYPE = "application/x-org-node";
+
+type DropState = Drop & { valid: boolean; reason: "" | "same" | "own-team" | "not-allowed" };
 /** Overview bitmap budget: 16M pixels (about 64 MB) and a safe canvas side length. */
 const SNAPSHOT_PIXELS = 16_000_000;
 const SNAPSHOT_SIDE = 8192;
@@ -268,6 +313,20 @@ function paintMatchMarkers(
   return drawn;
 }
 
+/** People in i's team, i excluded. O(team size). */
+function teamSize(t: TreeLayout, i: number) {
+  let count = 0;
+  const stack = [i];
+  while (stack.length) {
+    const v = stack.pop()!;
+    for (let c = t.childStart[v]; c < t.childStart[v + 1]; c++) {
+      count++;
+      stack.push(t.childList[c]);
+    }
+  }
+  return count;
+}
+
 /** Nearest two managers of i, top first, with "…" when there are more. */
 function managersOf(m: Model, i: number): string[] {
   const path: string[] = [];
@@ -304,6 +363,10 @@ interface CardProps {
   search?: "match" | "dim";
   /** Normalized query, on matching cards: marks the matched letters. */
   highlight?: string;
+  /** "origin": the card being dragged (shown as its empty slot); "team": the reports coming along. */
+  dragging?: "origin" | "team";
+  /** Drop target state: "target" (will become the manager) or "invalid". */
+  drop?: "target" | "invalid";
 }
 
 function Marked({ text, query }: { text: string; query?: string }) {
@@ -311,10 +374,25 @@ function Marked({ text, query }: { text: string; query?: string }) {
   return highlightParts(text, query).map((p, i) => (p.hit ? <mark key={i}>{p.text}</mark> : p.text));
 }
 
-const OrgCard = React.memo(function OrgCard({ node, x, y, detail, reports, selected, onPath, search, highlight }: CardProps) {
+const OrgCard = React.memo(function OrgCard({
+  node,
+  x,
+  y,
+  detail,
+  reports,
+  selected,
+  onPath,
+  search,
+  highlight,
+  dragging,
+  drop,
+}: CardProps) {
   return (
     <div
       className="ds-org-card"
+      data-id={node.id}
+      data-dragging={dragging}
+      data-drop={drop}
       data-detail={detail}
       data-selected={selected ? "" : undefined}
       data-path={onPath ? "" : undefined}
@@ -359,6 +437,8 @@ interface Camera {
 interface DomWindow {
   ids: number[];
   detail: OrgChartDetail;
+  /** Data the ids index into: after an edit, ids are translated to the new data by node id. */
+  model?: Model;
 }
 
 export function OrgChart({
@@ -377,6 +457,11 @@ export function OrgChart({
   defaultQuery = "",
   onQueryChange,
   getSearchText = defaultSearchText,
+  editable = false,
+  canMove,
+  onMove,
+  onDropExternal,
+  externalType = DEFAULT_EXTERNAL_TYPE,
   className,
   ref,
 }: OrgChartProps) {
@@ -446,10 +531,40 @@ export function OrgChart({
   const colorCache = React.useRef(new Map<string, string>());
 
   // Latest props for the frame loop, which runs outside React renders
-  const live = React.useRef({ model, virtualize, overscan, debug, showStats, selected, win, result });
+  const edit = { editable, canMove, onMove, onDropExternal, externalType };
+  const live = React.useRef({ model, virtualize, overscan, debug, showStats, selected, win, result, edit });
   React.useLayoutEffect(() => {
-    live.current = { model, virtualize, overscan, debug, showStats, selected, win, result };
+    live.current = { model, virtualize, overscan, debug, showStats, selected, win, result, edit };
   });
+
+  /* ---- Drag state: refs for the per-move work, React state only for what renders */
+  const dragState = React.useRef<{ mode: "pointer" | "external" | "keyboard"; dragged: number; pointer: { x: number; y: number } } | null>(
+    null,
+  );
+  const dropRef = React.useRef<DropState | null>(null);
+  const [dragging, setDragging] = React.useState<{
+    dragged: number;
+    ghost: boolean;
+    scale: number;
+    team: number;
+    /** Where the card starts relative to its trailing spot: exactly where it was grabbed. */
+    fromX: number;
+    fromY: number;
+  } | null>(null);
+  const [dropLabel, setDropLabel] = React.useState("");
+  /** Card to light up as the drop target (kept in state so only it re-renders). */
+  const [dropView, setDropView] = React.useState<{ target: number; state: "target" | "invalid" } | null>(null);
+  const ghostRef = React.useRef<HTMLDivElement>(null);
+  /** Preview top-left relative to the pointer (negative: below-right of it). */
+  const ghostOffset = React.useRef({ x: -TRAIL, y: -TRAIL });
+  /** Where the preview was when a valid drop let go: the moved card slides in from there. */
+  const dropFrom = React.useRef<{ id: string; x: number; y: number; scale: number; at: number } | null>(null);
+  const edgePan = React.useRef(0);
+  const dropScratch = React.useRef<number[]>([]);
+  /** Node to keep in place on screen when the next `nodes` arrives (the one just moved). */
+  const editAnchor = React.useRef<string | null>(null);
+  /** The person just moved: brought into view after the edit if their new place is off screen. */
+  const editFocus = React.useRef<string | null>(null);
 
   /** CSS color (tokens, light-dark()) → a color canvas understands, cached per theme. */
   const resolve = React.useCallback((css: string) => {
@@ -534,7 +649,7 @@ export function OrgChart({
     if (virt) {
       const r = windowRect.current;
       if (detail === "overview") {
-        if (w.ids.length) setWin({ ids: [], detail });
+        if (w.ids.length) setWin({ ids: [], detail, model: m });
         windowRect.current = null;
         stats.current.dom = 0;
         naiveKey.current = "";
@@ -549,14 +664,14 @@ export function OrgChart({
         windowRect.current = rect;
         naiveKey.current = "";
         stats.current.dom = ids.length;
-        setWin({ ids, detail });
+        setWin({ ids, detail, model: m });
       }
     } else {
       const naiveDetail = detail === "overview" ? "compact" : detail;
       const key = `${t.count}:${naiveDetail}`;
       if (naiveKey.current !== key) {
         naiveKey.current = key;
-        setWin({ ids: Array.from({ length: t.count }, (_, i) => i), detail: naiveDetail });
+        setWin({ ids: Array.from({ length: t.count }, (_, i) => i), detail: naiveDetail, model: m });
       }
       stats.current.dom = t.count;
       stats.current.cells = 0;
@@ -622,6 +737,56 @@ export function OrgChart({
       ctx.fillStyle = resolve("var(--color-highlight-strong)");
       stats.current.markers = paintMatchMarkers(ctx, m, res.ranked, cam.current, vw, vh);
       ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty);
+    }
+
+    // Drop indicator: a ring around the new manager, or a bar where a colleague slot opens
+    const drop = dropRef.current;
+    if (drop && drop.target < t.count && drop.reason !== "same") {
+      const i = drop.target;
+      const px = 1 / k;
+      const color = resolve(drop.valid ? "var(--color-text)" : "var(--color-danger)");
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      if (drop.kind === "child" || !drop.valid) {
+        ctx.lineWidth = 2.5 * px;
+        ctx.setLineDash(drop.valid ? [] : [6 * px, 4 * px]);
+        ctx.strokeRect(t.x[i] - 5 * px, t.y[i] - 5 * px, NODE_W + 10 * px, NODE_H + 10 * px);
+        ctx.setLineDash([]);
+        // Where the card will land, when that's predictable: a dashed slot, joined to the new manager
+        const slot = drop.valid ? newChildSlot(t, i) : null;
+        if (slot) {
+          ctx.globalAlpha = 0.08;
+          ctx.fillRect(slot.x, slot.y, NODE_W, NODE_H);
+          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 1.5 * px;
+          ctx.setLineDash([6 * px, 4 * px]);
+          ctx.strokeRect(slot.x, slot.y, NODE_W, NODE_H);
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+        }
+      } else {
+        // A colleague slot opens here: a bar in the gap, with round ends
+        const vertical = stackedSiblings(t, i);
+        const x0 = vertical ? t.x[i] + 4 : drop.kind === "before" ? t.x[i] - 10 : t.x[i] + NODE_W + 10;
+        const y0 = vertical ? (drop.kind === "before" ? t.y[i] - 4 : t.y[i] + NODE_H + 4) : t.y[i] + 4;
+        const x1 = vertical ? t.x[i] + NODE_W - 4 : x0;
+        const y1 = vertical ? y0 : t.y[i] + NODE_H - 4;
+        ctx.lineWidth = 4 * px;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+        ctx.lineCap = "butt";
+        for (const [cx, cy] of [
+          [x0, y0],
+          [x1, y1],
+        ]) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, 5 * px, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
 
     if (virt && detail === "overview" && sel >= 0 && sel < t.count) {
@@ -770,6 +935,8 @@ export function OrgChart({
   /** Zoom by `factor` keeping the screen point (sx, sy) fixed. */
   const zoomAt = React.useCallback(
     (sx: number, sy: number, factor: number) => {
+      // A direct zoom wins over a flight in progress (keyboard +/- during a fly-to)
+      stopAnim();
       const c = cam.current;
       const k = Math.min(MAX_ZOOM, Math.max(minZoom(), c.k * factor));
       const wx = (sx - c.x) / c.k;
@@ -827,7 +994,7 @@ export function OrgChart({
       live.current.selected = i;
       select(i < 0 ? null : m.nodes[i].id);
       if (i < 0) return;
-      announce(i);
+      if (!keyboardTarget.current(i)) announce(i);
       if (fly) centerOn(i, FULL_AT, true);
     },
     [select, announce, centerOn],
@@ -838,7 +1005,7 @@ export function OrgChart({
     (i: number) => {
       live.current.selected = i;
       select(live.current.model.nodes[i].id);
-      announce(i);
+      if (!keyboardTarget.current(i)) announce(i);
       centerOn(i, 1, false);
     },
     [select, announce, centerOn],
@@ -866,6 +1033,231 @@ export function OrgChart({
     },
     [goTo, animateTo, boxCamera],
   );
+
+  /* ---- Editing: evaluate drops, drag lifecycle, commit ------------------- */
+
+  const say = (text: string) => {
+    if (liveRef.current) liveRef.current.textContent = text;
+  };
+
+  /** Adds validity to a drop: not into your own team, not vetoed by canMove. */
+  const evaluateDrop = (d: Drop | null, dragged: number): DropState | null => {
+    if (!d) return null;
+    const { model: m, edit: ed } = live.current;
+    let reason: DropState["reason"] = "";
+    if (d.noop) reason = "same";
+    else if (dragged >= 0 && d.parent !== -1 && inSubtree(m.layout, d.parent, dragged)) reason = "own-team";
+    else if (ed.canMove && !ed.canMove(dragged >= 0 ? m.nodes[dragged] : null, d.parent === -1 ? null : m.nodes[d.parent]))
+      reason = "not-allowed";
+    return { ...d, valid: reason === "", reason };
+  };
+
+  /** Same manager, dropped on them: a reorder to the end of their team, not a new manager. */
+  const isReorderToEnd = (d: Drop, dragged: number) =>
+    d.kind === "child" && dragged >= 0 && live.current.model.layout.parent[dragged] === d.parent;
+
+  const describeDrop = (d: DropState | null, who: string) => {
+    if (!d) return "Drop on a person";
+    const name = live.current.model.nodes[d.target].name;
+    const st = dragState.current;
+    if (d.valid && st && isReorderToEnd(d, st.dragged)) return `Last in ${name}'s team`;
+    if (d.reason === "same") return "Same place";
+    if (d.reason === "own-team") return `Can't move ${who} into their own team`;
+    if (d.reason === "not-allowed") return "Not allowed here";
+    return d.kind === "child" ? `Report to ${name}` : d.kind === "before" ? `Before ${name}` : `After ${name}`;
+  };
+
+  /** New drop under the pointer: repaint the indicator, relabel the ghost only when it changed. */
+  const setDrop = (d: DropState | null) => {
+    const old = dropRef.current;
+    dropRef.current = d;
+    if (old?.target === d?.target && old?.kind === d?.kind && old?.valid === d?.valid) return;
+    const st = dragState.current;
+    const who = st && st.dragged >= 0 ? live.current.model.nodes[st.dragged].name : "them";
+    setDropLabel(describeDrop(d, who));
+    setDropView(
+      !d || d.reason === "same"
+        ? null
+        : !d.valid
+          ? { target: d.target, state: "invalid" }
+          : d.kind === "child"
+            ? { target: d.target, state: "target" }
+            : null,
+    );
+    // "Same place" isn't an error: neutral, not red
+    if (rootRef.current) rootRef.current.dataset.drag = !d || d.reason === "same" ? "none" : d.valid ? "valid" : "invalid";
+    schedule();
+  };
+
+  const updatePointerDrop = () => {
+    const st = dragState.current;
+    if (!st || st.mode === "keyboard") return;
+    const m = live.current.model;
+    const c = cam.current;
+    const wx = (st.pointer.x - c.x) / c.k;
+    const wy = (st.pointer.y - c.y) / c.k;
+    setDrop(evaluateDrop(findDrop(m.layout, m.nodeGrid, m.roots, wx, wy, st.dragged, dropScratch.current), st.dragged));
+  };
+
+  const moveGhost = (p: { x: number; y: number }) => {
+    const o = ghostOffset.current;
+    if (ghostRef.current) ghostRef.current.style.transform = `translate(${p.x - o.x}px, ${p.y - o.y}px)`;
+  };
+
+  /** Near an edge while dragging, pan toward it: the target can be off screen (it mounts as you arrive). */
+  const startEdgePan = () => {
+    if (edgePan.current) return;
+    const tick = () => {
+      const st = dragState.current;
+      if (!st || st.mode === "keyboard") {
+        edgePan.current = 0;
+        return;
+      }
+      const { w, h } = size.current;
+      const { x, y } = st.pointer;
+      const push = (d: number) => Math.min(1.5, Math.max(0, (EDGE - d) / EDGE));
+      const dx = push(x) - push(w - x);
+      const dy = push(y) - push(h - y);
+      if (dx || dy) {
+        cam.current = { ...cam.current, x: cam.current.x + dx * EDGE_SPEED, y: cam.current.y + dy * EDGE_SPEED };
+        updatePointerDrop();
+        schedule();
+      }
+      edgePan.current = requestAnimationFrame(tick);
+    };
+    edgePan.current = requestAnimationFrame(tick);
+  };
+
+  /** `grabFrom`: where the pointer went down, so the preview stays held at that spot of the card. */
+  const beginDrag = (
+    mode: "pointer" | "external" | "keyboard",
+    dragged: number,
+    pointer: { x: number; y: number },
+    grabFrom?: { x: number; y: number },
+  ) => {
+    dragState.current = { mode, dragged, pointer };
+    dropRef.current = null;
+    dropFrom.current = null;
+    let scale = 1;
+    let team = 0;
+    let fromX = 0;
+    let fromY = 0;
+    // The preview trails the pointer (below-right) so the tip and the target under it stay visible
+    ghostOffset.current = { x: -TRAIL, y: -TRAIL };
+    if (mode === "pointer" && dragged >= 0) {
+      const t = live.current.model.layout;
+      const c = cam.current;
+      scale = Math.min(PREVIEW_MAX, Math.max(PREVIEW_MIN, c.k));
+      const from = grabFrom ?? pointer;
+      const fx = Math.min(1, Math.max(0, ((from.x - c.x) / c.k - t.x[dragged]) / NODE_W));
+      const fy = Math.min(1, Math.max(0, ((from.y - c.y) / c.k - t.y[dragged]) / NODE_H));
+      // Pick-up starts with the card exactly where it was grabbed, then glides to its trailing spot
+      fromX = -(fx * NODE_W * scale + TRAIL);
+      fromY = -(fy * NODE_H * scale + TRAIL);
+      team = teamSize(t, dragged);
+    }
+    setDragging({ dragged, ghost: mode !== "keyboard", scale, team, fromX, fromY });
+    setDropView(null);
+    setDropLabel(mode === "keyboard" ? "" : "Drop on a person");
+    setPanning(false);
+    if (mode !== "keyboard") startEdgePan();
+  };
+
+  /**
+   * Ends any drag and hands back what was under it; the caller decides whether to commit.
+   * `snapBack`: the preview flies home to the card's slot (cancelled or refused drop).
+   */
+  const finishDrag = (opts: { snapBack?: boolean } = {}) => {
+    const st = dragState.current;
+    const drop = dropRef.current;
+    const o = ghostOffset.current;
+    const preview = st ? { x: st.pointer.x - o.x, y: st.pointer.y - o.y } : null;
+    const ghost = ghostRef.current;
+    const t = live.current.model.layout;
+    if (opts.snapBack && ghost && st?.mode === "pointer" && st.dragged >= 0 && st.dragged < t.count && !prefersReducedMotion()) {
+      // Keep a copy of the preview on screen just long enough to fly it back
+      const copy = ghost.cloneNode(true) as HTMLElement;
+      copy.classList.add("is-returning");
+      rootRef.current?.appendChild(copy);
+      const c = cam.current;
+      const ox = t.x[st.dragged] * c.k + c.x;
+      const oy = t.y[st.dragged] * c.k + c.y;
+      copy
+        .animate([{ transform: ghost.style.transform }, { transform: `translate(${ox}px, ${oy}px)`, opacity: 0 }], {
+          duration: 260,
+          easing: "cubic-bezier(0.2, 0, 0, 1)",
+        })
+        .finished.finally(() => copy.remove());
+    }
+    cancelAnimationFrame(edgePan.current);
+    edgePan.current = 0;
+    dragState.current = null;
+    dropRef.current = null;
+    setDragging(null);
+    setDropLabel("");
+    setDropView(null);
+    rootRef.current?.removeAttribute("data-drag");
+    schedule();
+    return { st, drop, preview };
+  };
+
+  /**
+   * Reports a move and keeps the moved person selected. `anchor` is what stays put on screen when
+   * the new data arrives: the drop target for a drop (where you were looking), the person for
+   * one-step keyboard moves (where the focus is).
+   */
+  const commitMove = (
+    dragged: number,
+    d: DropState,
+    anchor: "target" | "moved",
+    from?: { x: number; y: number } | null,
+  ) => {
+    const { model: m, edit: ed } = live.current;
+    const node = m.nodes[dragged];
+    if (from && dragging) dropFrom.current = { id: node.id, ...from, scale: dragging.scale, at: performance.now() };
+    const parentId = d.parent === -1 ? null : m.nodes[d.parent].id;
+    if (import.meta.env.DEV && !ed.onMove) console.warn("[ds] <OrgChart editable> has no onMove: the move is ignored.");
+    editAnchor.current = anchor === "target" ? m.nodes[d.target].id : node.id;
+    editFocus.current = node.id;
+    live.current.selected = dragged;
+    select(node.id);
+    ed.onMove?.({ id: node.id, parentId, index: d.index });
+    const target = m.nodes[d.target].name;
+    say(
+      m.layout.parent[dragged] === d.parent
+        ? // Same manager: a reorder
+          d.kind === "child"
+          ? `Moved ${node.name} to the end of the team.`
+          : `Moved ${node.name} ${d.kind} ${target}.`
+        : `Moved ${node.name}. ${d.parent === -1 ? "Now top level." : `Now reports to ${m.nodes[d.parent].name}.`}`,
+    );
+  };
+
+  /** Keyboard move mode: the selected person is the drop target ("report to them"). */
+  const keyboardTarget = React.useRef<(i: number) => boolean>(() => false);
+  keyboardTarget.current = (i: number) => {
+    const st = dragState.current;
+    if (st?.mode !== "keyboard") return false;
+    const m = live.current.model;
+    const d = evaluateDrop(resolveDrop(m.layout, m.roots, i, "child", st.dragged), st.dragged);
+    setDrop(d);
+    const who = m.nodes[st.dragged].name;
+    const action = !d?.valid
+      ? `${describeDrop(d, who)}.`
+      : isReorderToEnd(d, st.dragged)
+        ? `Press Enter: ${who} moves to the end of their team.`
+        : `Press Enter: ${who} will report to them.`;
+    say(`${m.nodes[i].name}. ${action}`);
+    return true;
+  };
+
+  /** Alt + arrows: one-step structural moves of the selected person. */
+  const keyMove = (sel: number, target: number, kind: DropKind) => {
+    const m = live.current.model;
+    const d = evaluateDrop(resolveDrop(m.layout, m.roots, target, kind, sel), sel);
+    if (d?.valid) commitMove(sel, d, "moved");
+    else say(d?.reason === "not-allowed" ? "That move isn't allowed." : "Can't move there.");
+  };
 
   React.useImperativeHandle(
     ref,
@@ -920,20 +1312,79 @@ export function OrgChart({
     return () => ro.disconnect();
   }, [initialView, schedule]);
 
-  // New data: back to the top, fresh window
-  const firstModel = React.useRef(true);
+  // New data. An edit of the same org (the moved person, the selection or the top person
+  // still exists): keep the view anchored and slide visible cards from their old places.
+  // A different org: back to the top.
+  const prevModel = React.useRef(model);
   React.useLayoutEffect(() => {
-    if (firstModel.current) {
-      firstModel.current = false;
-      return;
-    }
+    const prev = prevModel.current;
+    if (prev === model) return;
+    prevModel.current = model;
     stopAnim();
-    needsInitialView.current = true;
-    initialView();
+    if (dragState.current) finishDrag();
     windowRect.current = null;
-    setWin({ ids: [], detail: "full" });
-    schedule();
-  }, [model, initialView, schedule]);
+    naiveKey.current = "";
+
+    const sel = live.current.selected;
+    const anchorId = editAnchor.current ?? (sel >= 0 && sel < model.layout.count ? model.nodes[sel].id : null);
+    editAnchor.current = null;
+    const a = anchorId != null ? prev.index.get(anchorId) : undefined;
+    const b = anchorId != null ? model.index.get(anchorId) : undefined;
+    const sameTop = prev.roots.length > 0 && model.roots.length > 0 && prev.nodes[prev.roots[0]].id === model.nodes[model.roots[0]].id;
+
+    if ((a !== undefined && b !== undefined) || sameTop) {
+      const ax = a !== undefined && b !== undefined ? prev.layout.x[a] - model.layout.x[b] : 0;
+      const ay = a !== undefined && b !== undefined ? prev.layout.y[a] - model.layout.y[b] : 0;
+      const c = cam.current;
+      cam.current = { ...c, x: c.x + ax * c.k, y: c.y + ay * c.k };
+      // FLIP: cards are already at their new places; start each at its old one and animate back.
+      // Only the cards in view exist, so this is ~100 animations, never 100k.
+      if (!prefersReducedMotion() && worldRef.current) {
+        // The card just dropped starts where its preview was let go, at the preview's size
+        const from = dropFrom.current && performance.now() - dropFrom.current.at < 1500 ? dropFrom.current : null;
+        dropFrom.current = null;
+        const k = cam.current.k;
+        for (const el of worldRef.current.querySelectorAll<HTMLElement>(".ds-org-card[data-id]")) {
+          const id = el.dataset.id!;
+          const i = prev.index.get(id);
+          const j = model.index.get(id);
+          if (i === undefined || j === undefined) continue;
+          if (from && id === from.id) {
+            const fx = (from.x - cam.current.x) / k - model.layout.x[j];
+            const fy = (from.y - cam.current.y) / k - model.layout.y[j];
+            el.animate(
+              [
+                { transform: `translate(${fx}px, ${fy}px) scale(${from.scale / k})`, transformOrigin: "0 0" },
+                { transform: "none", transformOrigin: "0 0" },
+              ],
+              { duration: 340, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+            );
+            continue;
+          }
+          const dx = prev.layout.x[i] - model.layout.x[j] - ax;
+          const dy = prev.layout.y[i] - model.layout.y[j] - ay;
+          if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+          el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], {
+            duration: 320,
+            easing: "cubic-bezier(0.2, 0, 0, 1)",
+          });
+        }
+      }
+    } else {
+      needsInitialView.current = true;
+      initialView();
+      setWin({ ids: [], detail: "full" });
+    }
+    // Apply the camera before paint: never a frame with new positions under the old camera
+    cancelAnimationFrame(frame.current);
+    frame.current = 0;
+    draw();
+    // The moved person's new place can be off screen (end of a long team): glide just enough to show them
+    const focusId = editFocus.current;
+    editFocus.current = null;
+    const f = focusId != null ? model.index.get(focusId) : undefined;
+    if (f !== undefined) centerOn(f, cam.current.k, true);
+  }, [model, initialView, draw, centerOn]);
 
   // Paint the overview bitmap while idle, so the first zoom-out doesn't hitch
   React.useEffect(() => {
@@ -1025,6 +1476,10 @@ export function OrgChart({
     cam: Camera;
     moved: boolean;
     pinch?: { dist: number; mx: number; my: number };
+    /** Card under the pointer at the start (editable): a drag from here moves it instead of panning. */
+    candidate?: number;
+    touch?: boolean;
+    timer?: number;
   } | null>(null);
   const [panning, setPanning] = React.useState(false);
 
@@ -1052,14 +1507,49 @@ export function OrgChart({
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest(".ds-org-tools, .ds-org-search")) return;
     stopAnim();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    pointers.current.set(e.pointerId, local(e));
+    // A click or a second finger ends any move in progress
+    if (dragState.current) finishDrag();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // The pointer is already gone (released mid-dispatch): the gesture still works without capture
+    }
+    const p = local(e);
+    pointers.current.set(e.pointerId, p);
     startGesture();
+    const g = gesture.current;
+    if (g && live.current.edit.editable && pointers.current.size === 1) {
+      const c = cam.current;
+      const wx = (p.x - c.x) / c.k;
+      const wy = (p.y - c.y) / c.k;
+      const hits: number[] = [];
+      live.current.model.nodeGrid.query(wx, wy, wx, wy, hits);
+      g.candidate = hits.length ? hits[0] : -1;
+      g.touch = e.pointerType === "touch";
+      // Touch: press and hold picks the card up; moving first pans as usual
+      if (g.touch && g.candidate >= 0) {
+        const id = e.pointerId;
+        g.timer = window.setTimeout(() => {
+          if (gesture.current !== g || g.moved) return;
+          g.moved = true;
+          const at = pointers.current.get(id) ?? p;
+          beginDrag("pointer", g.candidate!, at, p);
+          updatePointerDrop();
+        }, LONG_PRESS);
+      }
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!pointers.current.has(e.pointerId) || !gesture.current) return;
     pointers.current.set(e.pointerId, local(e));
+    const st = dragState.current;
+    if (st?.mode === "pointer") {
+      st.pointer = local(e);
+      moveGhost(st.pointer);
+      updatePointerDrop();
+      return;
+    }
     const g = gesture.current;
     const pts = [...pointers.current.values()];
     if (g.pinch && pts.length >= 2) {
@@ -1079,7 +1569,15 @@ export function OrgChart({
     const dx = p.x - g.sx;
     const dy = p.y - g.sy;
     if (!g.moved && Math.hypot(dx, dy) > 3) {
+      clearTimeout(g.timer);
       g.moved = true;
+      // Started on a card (mouse, pen): this drag moves the card
+      if (g.candidate !== undefined && g.candidate >= 0 && !g.touch) {
+        beginDrag("pointer", g.candidate, p, { x: g.sx, y: g.sy });
+        moveGhost(p);
+        updatePointerDrop();
+        return;
+      }
       setPanning(true);
     }
     if (g.moved) {
@@ -1091,6 +1589,16 @@ export function OrgChart({
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!pointers.current.has(e.pointerId)) return;
     const g = gesture.current;
+    if (g) clearTimeout(g.timer);
+    if (dragState.current?.mode === "pointer") {
+      pointers.current.delete(e.pointerId);
+      const ok = e.type === "pointerup" && !!dropRef.current?.valid;
+      const { st, drop, preview } = finishDrag({ snapBack: !ok });
+      if (ok && st && drop) commitMove(st.dragged, drop, "target", preview);
+      gesture.current = null;
+      setPanning(false);
+      return;
+    }
     const p = pointers.current.get(e.pointerId)!;
     pointers.current.delete(e.pointerId);
     if (g && !g.moved && e.type === "pointerup") {
@@ -1109,6 +1617,43 @@ export function OrgChart({
     }
   };
 
+  /* ---- Drops from outside: native drag and drop with our dataTransfer type */
+
+  const acceptsExternal = (e: React.DragEvent) =>
+    live.current.edit.editable && Array.from(e.dataTransfer.types).includes(live.current.edit.externalType);
+
+  const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!acceptsExternal(e)) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const st = dragState.current;
+    if (st?.mode !== "external") beginDrag("external", -1, p);
+    else st.pointer = p;
+    moveGhost(p);
+    updatePointerDrop();
+    e.dataTransfer.dropEffect = dropRef.current?.valid ? "copy" : "none";
+  };
+
+  const onDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    if (dragState.current?.mode !== "external") return;
+    // Moving between the chart's own children also fires dragleave
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget as Node)) return;
+    finishDrag();
+  };
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    if (dragState.current?.mode !== "external") return;
+    e.preventDefault();
+    const { drop } = finishDrag();
+    if (!drop?.valid) return;
+    const { model: m, edit: ed } = live.current;
+    const parentId = drop.parent === -1 ? null : m.nodes[drop.parent].id;
+    editAnchor.current = parentId ?? m.nodes[drop.target].id;
+    ed.onDropExternal?.({ data: e.dataTransfer.getData(ed.externalType), parentId, index: drop.index });
+    say(drop.parent === -1 ? "Dropped at the top level." : `Dropped under ${m.nodes[drop.parent].name}.`);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;
     const m = live.current.model;
@@ -1121,6 +1666,34 @@ export function OrgChart({
       e.preventDefault();
       searchInputRef.current?.focus();
       return;
+    }
+
+    // Keyboard move mode: arrows pick the new manager (below), Enter drops, Escape cancels
+    const st = dragState.current;
+    if (st && (e.key === "Escape" || (st.mode === "keyboard" && e.key === "Enter"))) {
+      e.preventDefault();
+      const { drop } = finishDrag({ snapBack: e.key === "Escape" });
+      if (e.key === "Enter" && drop?.valid) commitMove(st.dragged, drop, "target");
+      else say("Move cancelled.");
+      return;
+    }
+    if (live.current.edit.editable && !st && sel >= 0) {
+      if ((e.key === "m" || e.key === "M") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        beginDrag("keyboard", sel, { x: 0, y: 0 });
+        say(`Moving ${m.nodes[sel].name}. Arrow keys or search choose the new manager, Enter drops, Escape cancels.`);
+        return;
+      }
+      if (e.altKey && e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        const [list, at] = siblingsOf(m, sel);
+        if (e.key === "ArrowLeft" && at > 0) keyMove(sel, list[at - 1], "before");
+        else if (e.key === "ArrowRight" && at < list.length - 1) keyMove(sel, list[at + 1], "after");
+        else if (e.key === "ArrowUp" && t.parent[sel] !== -1) keyMove(sel, t.parent[sel], "after");
+        else if (e.key === "ArrowDown" && at > 0) keyMove(sel, list[at - 1], "child");
+        else say("Can't move further that way.");
+        return;
+      }
     }
 
     if (e.shiftKey && e.key.startsWith("Arrow")) {
@@ -1192,10 +1765,23 @@ export function OrgChart({
     return set;
   }, [selected, t]);
   const searchOn = searching && result.mask.length === t.count;
-  const cards = win.ids.map((i) =>
+  // Right after an edit the window still indexes the old data: map it by id until the next frame re-culls
+  const winIds = React.useMemo(() => {
+    const from = win.model;
+    if (!from || from === model) return win.ids;
+    const out: number[] = [];
+    for (const i of win.ids) {
+      const j = i < from.nodes.length ? model.index.get(from.nodes[i].id) : undefined;
+      if (j !== undefined) out.push(j);
+    }
+    return out;
+  }, [win, model]);
+  const draggedIdx = dragging && dragging.dragged < t.count ? dragging.dragged : -1;
+  const cards = winIds.map((i) =>
     i < t.count ? (
       <OrgCard
-        key={i}
+        // Keyed by id, not index: after an edit the same person keeps the same element (and slides)
+        key={model.nodes[i].id}
         node={model.nodes[i]}
         x={t.x[i]}
         y={t.y[i]}
@@ -1205,6 +1791,8 @@ export function OrgChart({
         onPath={pathSet.has(i)}
         search={searchOn ? (result.mask[i] ? "match" : "dim") : undefined}
         highlight={searchOn && result.mask[i] ? result.query : undefined}
+        dragging={draggedIdx < 0 ? undefined : i === draggedIdx ? "origin" : inSubtree(t, i, draggedIdx) ? "team" : undefined}
+        drop={dropView?.target === i ? dropView.state : undefined}
       />
     ) : null,
   );
@@ -1254,6 +1842,12 @@ export function OrgChart({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onKeyDown={onKeyDown}
+      onDragEnter={onDragOver}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      data-editable={editable ? "" : undefined}
+      data-dragging={dragging ? "" : undefined}
     >
       <canvas ref={canvasRef} className="ds-org-canvas" aria-hidden="true" />
       <div ref={worldRef} className="ds-org-world" aria-hidden="true">
@@ -1290,11 +1884,61 @@ export function OrgChart({
       </div>
       {showStats && <div ref={hudRef} className="ds-org-hud" aria-hidden="true" />}
 
+      {dragging?.ghost && (
+        <div
+          ref={ghostRef}
+          className="ds-org-drag"
+          aria-hidden="true"
+          style={{
+            transform: `translate(${(dragState.current?.pointer.x ?? 0) - ghostOffset.current.x}px, ${
+              (dragState.current?.pointer.y ?? 0) - ghostOffset.current.y
+            }px)`,
+          }}
+        >
+          {draggedIdx >= 0 && (
+            // The card itself, lifted, held where it was grabbed; a team shows as a stack behind it
+            <div
+              className="ds-org-drag-card"
+              data-team={dragging.team > 0 ? "" : undefined}
+              style={
+                {
+                  width: NODE_W * dragging.scale,
+                  height: NODE_H * dragging.scale,
+                  "--ds-org-pickup-x": `${dragging.fromX}px`,
+                  "--ds-org-pickup-y": `${dragging.fromY}px`,
+                } as React.CSSProperties
+              }
+            >
+              <div className="ds-org-drag-scale" style={{ transform: `scale(${dragging.scale})` }}>
+                <OrgCard
+                  node={model.nodes[draggedIdx]}
+                  x={0}
+                  y={0}
+                  detail="full"
+                  reports={t.childStart[draggedIdx + 1] - t.childStart[draggedIdx]}
+                  selected={false}
+                  onPath={false}
+                />
+              </div>
+              {dragging.team > 0 && (
+                <span className="ds-org-drag-team">
+                  +{dragging.team.toLocaleString("en-US")} {dragging.team === 1 ? "person" : "people"}
+                </span>
+              )}
+            </div>
+          )}
+          {dropLabel && <span className="ds-org-drag-label">{dropLabel}</span>}
+        </div>
+      )}
+
       <span ref={probeRef} className="ds-org-probe" aria-hidden="true" />
       <p id={hintId} className="ds-visually-hidden">
         {model.nodes.length.toLocaleString("en-US")} people. Arrow keys move between people: up to the manager, down to
         the first report, left and right between colleagues. Shift with arrows pans, plus and minus zoom, 0 fits the whole
         chart.{search ? " Slash or Control F searches." : ""}
+        {editable
+          ? " M moves the selected person: choose the new manager with the arrow keys or search, then Enter. Alt with left and right reorders among colleagues, Alt up moves next to the manager, Alt down under the previous colleague."
+          : ""}
       </p>
       <div ref={liveRef} className="ds-visually-hidden" aria-live="polite" />
     </div>

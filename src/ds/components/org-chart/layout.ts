@@ -271,6 +271,25 @@ export function layoutTree(parentOf: Int32Array): TreeLayout {
   };
 }
 
+/**
+ * Where a new last report of `p` will appear, when that's predictable without re-laying out:
+ * under the last member of a stacked team, or right below someone with no reports yet who sits
+ * in a row (the space under them is empty). Anything else re-flows (a stack member who gains a
+ * report turns the stack into a row; grids re-wrap), so those return null.
+ */
+export function newChildSlot(t: TreeLayout, p: number): { x: number; y: number } | null {
+  const a = t.childStart[p];
+  const b = t.childStart[p + 1];
+  if (b === a) {
+    const parent = t.parent[p];
+    const inRow = parent === -1 || t.mode[parent] === MODE_ROW;
+    return inRow ? { x: t.x[p], y: t.y[p] + NODE_H + LEVEL_GAP } : null;
+  }
+  if (t.mode[p] !== MODE_STACK) return null;
+  const last = t.childList[b - 1];
+  return { x: t.x[last], y: t.y[last] + NODE_H + STACK_GAP };
+}
+
 export interface EdgeGeometry {
   /** Polyline of the connector into child c: pts[c*8 .. c*8 + len[c]*2) */
   pts: Float32Array;

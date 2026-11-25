@@ -26,6 +26,12 @@
 .ds-org.is-panning {
   cursor: grabbing;
 }
+.ds-org[data-dragging] {
+  cursor: grabbing;
+}
+.ds-org[data-drag="invalid"] {
+  cursor: no-drop;
+}
 
 .ds-org-canvas {
   position: absolute;
@@ -174,6 +180,148 @@
   font-weight: var(--weight-semibold);
 }
 
+/* ---- Dragging ---- */
+
+/* Where the dragged card was: an empty dashed slot. Its team fades but stays readable. */
+.ds-org-card[data-dragging="origin"] {
+  border: 1.5px dashed var(--color-border-strong);
+  background: color-mix(in oklab, var(--color-text) 3%, transparent);
+  box-shadow: none;
+}
+.ds-org-card[data-dragging="origin"] > * {
+  visibility: hidden;
+}
+.ds-org-card[data-dragging="team"] {
+  opacity: 0.35;
+}
+
+/* The person the card would report to */
+.ds-org-card[data-drop="target"] {
+  border-color: var(--color-text);
+  background: color-mix(in oklab, var(--color-text) 6%, var(--color-surface));
+  box-shadow:
+    inset 3px 0 0 var(--_c),
+    inset 0 0 0 1px var(--color-text),
+    var(--shadow-md);
+}
+.ds-org-card[data-drop="invalid"] {
+  border: 1.5px dashed var(--color-danger);
+}
+
+/* The preview: the card itself, lifted, held where it was grabbed */
+.ds-org-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  pointer-events: none;
+  will-change: transform;
+}
+.ds-org-drag-card {
+  position: relative;
+  isolation: isolate;
+  opacity: 0.95;
+  animation: ds-org-pickup var(--duration-normal) var(--ease-out) forwards;
+}
+.ds-org-drag-scale {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ds-org-w);
+  height: var(--ds-org-h);
+  transform-origin: 0 0;
+}
+.ds-org-drag .ds-org-card {
+  border-color: var(--color-border-strong);
+  box-shadow:
+    inset 3px 0 0 var(--_c),
+    var(--shadow-lg),
+    var(--highlight);
+}
+/* A team being moved: two cards stacked behind */
+.ds-org-drag-card[data-team]::before,
+.ds-org-drag-card[data-team]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+.ds-org-drag-card[data-team]::before {
+  translate: 5px 5px;
+}
+.ds-org-drag-card[data-team]::after {
+  translate: 10px 10px;
+  opacity: 0.7;
+}
+.ds-org-drag-team {
+  position: absolute;
+  top: 0;
+  right: 0;
+  translate: 35% -50%;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-solid);
+  color: var(--color-on-solid);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* What a drop would do, under the card */
+.ds-org-drag-label {
+  max-width: 18rem;
+  overflow: hidden;
+  padding: var(--space-0-5) var(--space-2-5);
+  border-radius: var(--radius-full);
+  background: var(--color-solid);
+  color: var(--color-on-solid);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-shadow: var(--shadow-md);
+}
+.ds-org[data-drag="invalid"] .ds-org-drag-label {
+  background: var(--color-danger);
+}
+.ds-org[data-drag="none"] .ds-org-drag-label,
+.ds-org:not([data-drag]) .ds-org-drag-label {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+}
+/* The copy that flies home when a drop is cancelled */
+.ds-org-drag.is-returning .ds-org-drag-label,
+.ds-org-drag.is-returning .ds-org-drag-team {
+  display: none;
+}
+
+/* Pick-up: from exactly where the card was grabbed to its spot trailing the pointer, lifting */
+@keyframes ds-org-pickup {
+  from {
+    translate: var(--ds-org-pickup-x) var(--ds-org-pickup-y);
+    transform: none;
+  }
+  to {
+    translate: 0 0;
+    transform: rotate(-1.5deg) scale(1.02);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-org-drag-card {
+    animation: none;
+  }
+}
+
 /* ---- Chrome ---- */
 .ds-org-search {
   position: absolute;
@@ -302,6 +450,14 @@
 @media (forced-colors: active) {
   .ds-org-card {
     border-color: CanvasText;
+  }
+  .ds-org-card[data-drop="target"] {
+    outline: 3px solid Highlight;
+    outline-offset: -5px;
+  }
+  .ds-org-drag-label,
+  .ds-org-drag-team {
+    border: 1px solid CanvasText;
   }
   .ds-org-card[data-search="match"] {
     outline: 2px solid Mark;
