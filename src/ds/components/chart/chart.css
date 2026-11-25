@@ -1,0 +1,275 @@
+/* ==========================================================================
+   Chart: SVG marks colored by tokens. Series color arrives as --_c.
+   Marks: 2px lines, 10% area wash, ≤ 24px bars, hairline solid grid.
+   ========================================================================== */
+
+.ds-chart {
+  /* The surface the chart sits on: dots get a ring of it to stand off lines */
+  --ds-chart-surface: var(--color-bg);
+
+  position: relative;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+.ds-chart-plot {
+  position: relative;
+  min-width: 0;
+}
+
+.ds-chart-svg {
+  display: block;
+  overflow: visible;
+  font-family: inherit;
+  touch-action: pan-y; /* a horizontal drag reads values, a vertical one scrolls */
+}
+
+/* ---- Chrome: recessive ---- */
+.ds-chart-grid {
+  stroke: var(--chart-grid);
+  shape-rendering: crispEdges;
+}
+.ds-chart-baseline,
+.ds-chart-crosshair {
+  stroke: var(--chart-axis);
+  shape-rendering: crispEdges;
+}
+.ds-chart-band {
+  fill: var(--color-hover);
+}
+.ds-chart-tick {
+  fill: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Marks ---- */
+.ds-chart-line {
+  fill: none;
+  stroke: var(--_c);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.ds-chart-area {
+  fill: var(--_c);
+  fill-opacity: 0.1;
+}
+.ds-chart-point {
+  fill: var(--_c);
+}
+.ds-chart-dot {
+  fill: var(--_c);
+  stroke: var(--ds-chart-surface);
+  stroke-width: 2;
+  paint-order: stroke;
+}
+.ds-chart-bar {
+  fill: var(--_c);
+}
+
+/* ---- Legend: text in text tokens, identity from the key beside it ---- */
+.ds-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+}
+.ds-chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.ds-chart-key {
+  flex: none;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--_c);
+}
+.ds-chart-key[data-shape="box"] {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.ds-chart-key[data-shape="dot"] {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ---- Scatter ---- */
+.ds-chart-axis-title {
+  fill: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+.ds-chart-dot[data-active] {
+  stroke-width: 3;
+}
+
+/* ---- Donut / pie ---- */
+.ds-chart-donut {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+}
+.ds-chart-donut-figure {
+  position: relative;
+  flex: none;
+}
+.ds-chart-slice {
+  fill: var(--_c);
+  fill-rule: evenodd;
+  /* the 2px gap between slices is the surface showing through, not an outline */
+  stroke: var(--ds-chart-surface);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.ds-chart-empty {
+  fill: none;
+  stroke: var(--chart-grid);
+}
+/* Hovering one slice (or its legend row) recedes the others */
+.ds-chart-donut[data-active] .ds-chart-slice:not([data-active]),
+.ds-chart-donut[data-active] .ds-chart-donut-legend li:not([data-active]) {
+  opacity: 0.35;
+}
+
+.ds-chart-center {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  height: max-content;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  pointer-events: none;
+}
+.ds-chart-center > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Names may shorten with an ellipsis; numbers never do (the chart switches
+   them to the compact form instead) */
+.ds-chart-center > [data-number] {
+  max-width: none;
+  overflow: visible;
+}
+.ds-chart-center-value {
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+.ds-chart-center-label {
+  color: var(--color-text-muted);
+}
+.ds-chart-center-sub {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ds-chart-donut-legend {
+  display: grid;
+  gap: var(--space-1-5);
+  min-width: 160px;
+}
+.ds-chart-donut-legend li {
+  display: flex;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.ds-chart-donut-share {
+  margin-left: auto;
+  padding-left: var(--space-4);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Tooltip: values lead, labels follow ---- */
+.ds-chart-tooltip {
+  position: absolute;
+  z-index: 10;
+  display: grid;
+  gap: var(--space-1);
+  min-width: 140px;
+  max-width: 240px;
+  padding: var(--space-2) var(--space-2-5);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow:
+    var(--shadow-md),
+    0 0 0 1px var(--color-border),
+    var(--highlight);
+  pointer-events: none;
+  translate: var(--space-3) 0;
+}
+.ds-chart-tooltip[data-flip] {
+  translate: calc(-100% - var(--space-3)) 0;
+}
+/* Centered on a point (scatter dot, pie slice) instead of hanging from the top */
+.ds-chart-tooltip[data-align="center"] {
+  translate: var(--space-3) -50%;
+}
+.ds-chart-tooltip[data-align="center"][data-flip] {
+  translate: calc(-100% - var(--space-3)) -50%;
+}
+.ds-chart-tooltip-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  color: var(--color-text-muted);
+}
+.ds-chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ds-chart-tooltip-label {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-chart-tooltip-value {
+  margin-left: auto;
+  padding-left: var(--space-3);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Series colors carry identity: keep them; the chrome follows the system */
+@media (forced-colors: active) {
+  .ds-chart-line,
+  .ds-chart-area,
+  .ds-chart-point,
+  .ds-chart-dot,
+  .ds-chart-bar,
+  .ds-chart-slice,
+  .ds-chart-key {
+    forced-color-adjust: none;
+  }
+  .ds-chart-grid,
+  .ds-chart-baseline,
+  .ds-chart-crosshair {
+    stroke: GrayText;
+  }
+  .ds-chart-tick {
+    fill: CanvasText;
+  }
+  .ds-chart-tooltip {
+    border: 1px solid CanvasText;
+  }
+}

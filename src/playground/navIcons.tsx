@@ -24,6 +24,9 @@ export const ButtonGlyphIcon = createIcon(
   </>,
 );
 
+/* Three columns on a baseline */
+export const ChartGlyphIcon = createIcon("ChartGlyph", <path d="M4 20h16M7.5 16v-4M12 16V7M16.5 16v-6" />);
+
 export const TabsGlyphIcon = createIcon(
   "TabsGlyph",
   <path d="M3 9V7a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 9h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
@@ -40,6 +43,15 @@ export const SidebarGlyphIcon = createIcon(
 export const TooltipGlyphIcon = createIcon(
   "TooltipGlyph",
   <path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-2 3-2-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8 10h8" />,
+);
+
+/* A window floating over a dimmed page */
+export const DialogGlyphIcon = createIcon(
+  "DialogGlyph",
+  <>
+    <rect x="4.5" y="6" width="15" height="12" rx="3" />
+    <path d="M8 10h5M13.5 14.5h2.5" />
+  </>,
 );
 
 /* A text box with a caret */

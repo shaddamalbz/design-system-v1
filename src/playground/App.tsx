@@ -22,9 +22,11 @@ import { SidebarPage } from "./pages/SidebarPage";
 import { TooltipPage } from "./pages/TooltipPage";
 import { TextFieldPage } from "./pages/TextFieldPage";
 import { CheckboxPage } from "./pages/CheckboxPage";
+import { DialogPage } from "./pages/DialogPage";
 import { RadioPage } from "./pages/RadioPage";
 import { SwitchPage } from "./pages/SwitchPage";
 import { ButtonPage } from "./pages/ButtonPage";
+import { ChartPage } from "./pages/ChartPage";
 import { AsciiFieldPage } from "./pages/AsciiFieldPage";
 import { LandingPage } from "./pages/LandingPage";
 import { TermPage } from "./pages/TermPage";
@@ -34,8 +36,10 @@ import { SORTED_STYLES } from "./styles/designStyles";
 import {
   AsciiGlyphIcon,
   ButtonGlyphIcon,
+  ChartGlyphIcon,
   CheckboxGlyphIcon,
   ColorsIcon,
+  DialogGlyphIcon,
   RadioGlyphIcon,
   ShapeIcon,
   SidebarGlyphIcon,
@@ -75,6 +79,7 @@ const ROUTES: Route[] = [
   },
   { path: "shape", label: "Radius & shadow", group: "Foundations", icon: <ShapeIcon />, render: () => <ShapePage /> },
   { path: "button", label: "Button", group: "Components", icon: <ButtonGlyphIcon />, render: () => <ButtonPage /> },
+  { path: "chart", label: "Chart", group: "Components", icon: <ChartGlyphIcon />, render: () => <ChartPage /> },
   {
     path: "checkbox",
     label: "Checkbox",
@@ -82,6 +87,7 @@ const ROUTES: Route[] = [
     icon: <CheckboxGlyphIcon />,
     render: () => <CheckboxPage />,
   },
+  { path: "dialog", label: "Dialog", group: "Components", icon: <DialogGlyphIcon />, render: () => <DialogPage /> },
   { path: "radio", label: "Radio group", group: "Components", icon: <RadioGlyphIcon />, render: () => <RadioPage /> },
   {
     path: "sidebar",

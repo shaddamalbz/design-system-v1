@@ -51,6 +51,9 @@
   --color-hover: light-dark(rgb(0 0 0 / 0.045), rgb(255 255 255 / 0.055));
   --color-active: light-dark(rgb(0 0 0 / 0.08), rgb(255 255 255 / 0.09));
 
+  /* Dims the page behind a modal (dialog ::backdrop) */
+  --color-overlay: light-dark(rgb(0 0 0 / 0.32), rgb(0 0 0 / 0.6));
+
   --color-border: light-dark(#e6e6e6, #262626);
   --color-border-strong: light-dark(#d1d1d1, #3a3a3a);
   /* Edges that identify a control (checkbox, radio, switch): ≥ 3:1 against
@@ -77,6 +80,30 @@
 
   /* Focus ring: ≥ 3:1 against both bg colors (WCAG 2.2 · 1.4.11 / 2.4.13) */
   --color-ring: light-dark(#7a7a7a, #8c8c8c);
+
+  /* ------------------------------------------------------------------------
+     Data visualization: categorical series colors, the only place the UI
+     uses hue for identity. Assigned in this fixed order, never cycled: a
+     9th series folds into "Other" (--chart-other).
+     Validated (OKLab ΔE ×100) against --color-bg on adjacent pairs:
+       light #fff: CVD ≥ 9.1, normal vision ≥ 19.6
+       dark #0a0a0a: CVD ≥ 8.4, normal vision ≥ 19.3, every slot ≥ 3:1
+     Light slots 3, 4, 5 are below 3:1 contrast, so a chart always ships a
+     data table and a tooltip; color is never the only way to read a value.
+     Scatter-like charts (all pairs on screen at once): first 3 slots only.
+     ------------------------------------------------------------------------ */
+  --chart-1: light-dark(#2a78d6, #3987e5); /* blue */
+  --chart-2: light-dark(#eb6834, #d95926); /* orange */
+  --chart-3: light-dark(#1baf7a, #199e70); /* aqua */
+  --chart-4: light-dark(#eda100, #c98500); /* yellow */
+  --chart-5: light-dark(#e87ba4, #d55181); /* magenta */
+  --chart-6: light-dark(#008300, #0ca30c); /* green */
+  --chart-7: light-dark(#6250d6, #9085e9); /* violet */
+  --chart-8: light-dark(#e34948, #e66767); /* red */
+  --chart-other: var(--gray-9);
+  /* Chart chrome: hairline grid, a slightly stronger baseline */
+  --chart-grid: var(--color-border);
+  --chart-axis: var(--color-border-strong);
 
   /* ------------------------------------------------------------------------
      Spacing: 4px base grid (rem, so it scales with user font size).

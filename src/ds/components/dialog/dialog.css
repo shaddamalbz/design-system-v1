@@ -1,0 +1,245 @@
+/* ==========================================================================
+   Dialog: native <dialog> in the top layer.
+
+   Enter/exit: transitions from/to the closed state. @starting-style gives
+   the first frame after showModal(); transition-behavior: allow-discrete
+   keeps `display` and `overlay` around until the exit has played, so it
+   animates out too. Browsers without these just open and close instantly.
+   ========================================================================== */
+
+.ds-dialog {
+  --_w: 520px;
+  --_edge: var(--space-5); /* inner padding, also the gap to the viewport */
+  --_dur: var(--duration-slow);
+
+  /* The UA centers a modal dialog with inset: 0 + margin: auto; keep that,
+     just size it and keep a gap to the viewport. */
+  width: min(var(--_w), calc(100% - var(--space-4) * 2));
+  max-width: none;
+  max-height: calc(100dvh - var(--space-4) * 2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 1px var(--color-border),
+    var(--highlight);
+  overflow: hidden;
+  overscroll-behavior: contain;
+
+  /* Lets header/footer follow the body's scroll timeline (they're siblings) */
+  timeline-scope: --ds-dialog-body;
+
+  /* Closed state = where it animates from and back to */
+  opacity: 0;
+  scale: 0.96;
+  translate: 0 8px;
+  transition:
+    opacity var(--_dur) var(--ease-out),
+    scale var(--_dur) var(--ease-out),
+    translate var(--_dur) var(--ease-out),
+    display var(--_dur) allow-discrete,
+    overlay var(--_dur) allow-discrete;
+}
+.ds-dialog[data-size="sm"] {
+  --_w: 400px;
+}
+.ds-dialog[data-size="lg"] {
+  --_w: 720px;
+}
+
+/* display: flex only while open: a plain .ds-dialog { display: flex } would
+   override the UA's display: none and show a closed dialog. */
+.ds-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  opacity: 1;
+  scale: 1;
+  translate: 0 0;
+}
+@starting-style {
+  .ds-dialog[open] {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 8px;
+  }
+}
+/* Exit is quicker than enter: leaving should never feel like waiting */
+.ds-dialog:not([open]) {
+  --_dur: var(--duration-normal);
+}
+
+/* ---- Backdrop ---- */
+.ds-dialog::backdrop {
+  background-color: transparent;
+  transition:
+    background-color var(--_dur, 280ms) var(--ease-standard, ease),
+    backdrop-filter var(--_dur, 280ms) var(--ease-standard, ease),
+    display var(--_dur, 280ms) allow-discrete,
+    overlay var(--_dur, 280ms) allow-discrete;
+}
+.ds-dialog[open]::backdrop {
+  /* Fallback for browsers where ::backdrop doesn't inherit custom properties */
+  background-color: rgb(0 0 0 / 0.4);
+  background-color: var(--color-overlay, rgb(0 0 0 / 0.4));
+  backdrop-filter: blur(2px);
+}
+@starting-style {
+  .ds-dialog[open]::backdrop {
+    background-color: transparent;
+    backdrop-filter: blur(0);
+  }
+}
+
+/* Page behind stops scrolling while a modal is open. scrollbar-gutter keeps
+   the content from shifting sideways when the scrollbar goes away. */
+html:has(.ds-dialog:modal) {
+  overflow: hidden;
+  scrollbar-gutter: stable;
+}
+
+/* <form method="dialog"> wrapping body + footer shouldn't break the layout */
+.ds-dialog > form {
+  display: contents;
+}
+
+/* --------------------------------------------------------------------------
+   Parts
+   -------------------------------------------------------------------------- */
+
+.ds-dialog-header {
+  display: grid;
+  gap: var(--space-1);
+  flex: none;
+  /* 12px here + the body's 4px = 16px to the content */
+  padding: var(--_edge) var(--_edge) var(--space-3);
+  border-bottom: 1px solid transparent;
+}
+/* Room for the × button on the end side */
+.ds-dialog:has(> .ds-dialog-close) .ds-dialog-header {
+  padding-inline-end: calc(var(--_edge) + var(--control-sm));
+}
+
+.ds-dialog-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tighter);
+  text-wrap: balance;
+}
+
+.ds-dialog-description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  text-wrap: pretty;
+}
+
+.ds-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* The body is a scroll container, so it clips anything drawn outside its
+     padding box. Focus rings reach ~4px past a control (2px outline + 2px
+     offset), so keep at least that much padding on every side; header and
+     footer take the same 4px off theirs to keep the spacing. */
+  padding: var(--space-1) var(--_edge);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-timeline: --ds-dialog-body block;
+}
+/* Body as the last part (no footer): keep the bottom padding */
+.ds-dialog-body:last-child,
+.ds-dialog-body:has(+ .ds-dialog-close) {
+  padding-bottom: var(--_edge);
+}
+/* Header as the last part (alert with only title + description) */
+.ds-dialog-header:has(+ .ds-dialog-close),
+.ds-dialog-header:last-child {
+  padding-bottom: var(--_edge);
+}
+
+.ds-dialog-footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--_edge) var(--_edge);
+  border-top: 1px solid transparent;
+}
+/* Straight after the header (an alert: title, description, actions):
+   12px + 12px = the same 24px gap as before */
+.ds-dialog-header + .ds-dialog-footer {
+  padding-top: var(--space-3);
+}
+
+/* Narrow screens: full-width actions, primary (last) on top, thumb-sized */
+@media (max-width: 30rem) {
+  .ds-dialog-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .ds-dialog-footer > .ds-button {
+    --ds-btn-h: var(--control-lg);
+  }
+}
+
+/* The × button: drawn top-right, last in the DOM (see Dialog.tsx) */
+.ds-dialog-close {
+  position: absolute;
+  /* centered on the title's first line */
+  top: calc(var(--_edge) + (var(--leading-lg) - var(--control-sm)) / 2);
+  inset-inline-end: calc(var(--_edge) - var(--space-1-5));
+  color: var(--color-text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Scroll dividers: header/footer borders appear only while the body has
+   more to scroll in that direction. Driven by the body's scroll timeline;
+   when nothing overflows, the timeline is inactive and the borders stay
+   transparent. No support → no dividers (progressive enhancement).
+   -------------------------------------------------------------------------- */
+
+@supports (animation-timeline: scroll()) {
+  .ds-dialog-header {
+    animation: ds-dialog-divider-top linear both;
+    animation-timeline: --ds-dialog-body;
+  }
+  .ds-dialog-footer {
+    animation: ds-dialog-divider-bottom linear both;
+    animation-timeline: --ds-dialog-body;
+  }
+}
+@keyframes ds-dialog-divider-top {
+  0% {
+    border-bottom-color: transparent;
+  }
+  2%,
+  100% {
+    border-bottom-color: var(--color-border);
+  }
+}
+@keyframes ds-dialog-divider-bottom {
+  0%,
+  98% {
+    border-top-color: var(--color-border);
+  }
+  100% {
+    border-top-color: transparent;
+  }
+}
+
+@media (forced-colors: active) {
+  .ds-dialog {
+    border: 1px solid CanvasText;
+  }
+  .ds-dialog-header,
+  .ds-dialog-footer {
+    animation: none;
+  }
+}

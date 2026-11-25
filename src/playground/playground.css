@@ -226,7 +226,7 @@ p {
 .pg-section {
   margin-top: var(--space-16);
 }
-.pg-section h2 {
+.pg-section > h2 {
   margin: 0 0 var(--space-4);
   font-size: var(--text-lg);
   line-height: var(--leading-lg);
@@ -1526,6 +1526,75 @@ p {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* --------------------------------------------------------------------------
+   Chart page
+   -------------------------------------------------------------------------- */
+
+.pg-chart-stage {
+  padding: var(--space-8) var(--space-4);
+}
+/* The chart sits on a real surface, the way it would in an app */
+.pg-chart-card {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 760px;
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg);
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 1px var(--color-border);
+}
+.pg-chart-status {
+  display: flex;
+}
+
+.pg-callout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  max-width: 72ch;
+  margin-bottom: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  line-height: var(--leading-md);
+}
+.pg-callout-icon {
+  margin-top: 0.2em;
+  font-size: 1.125rem;
+}
+.pg-callout p,
+.pg-callout ul {
+  margin: 0 0 var(--space-2);
+}
+.pg-callout > div > :last-child {
+  margin-bottom: 0;
+}
+.pg-callout ul {
+  padding-left: var(--space-5);
+}
+
+/* --------------------------------------------------------------------------
+   Dialog page
+   -------------------------------------------------------------------------- */
+
+.pg-dialog-prose {
+  display: grid;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  text-wrap: pretty;
+}
+.pg-dialog-prose p {
+  margin: 0;
+}
+.pg-dialog-form {
+  display: grid;
+  gap: var(--space-4);
 }
 
 /* --------------------------------------------------------------------------
