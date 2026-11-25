@@ -76,6 +76,11 @@ export function createIcon(name: string, children: React.ReactNode, defaultNudge
 
 export const PlusIcon = createIcon("Plus", <path d="M12 5v14M5 12h14" />);
 
+export const MinusIcon = createIcon("Minus", <path d="M5 12h14" />);
+
+/* Four corners: "fit to view" */
+export const MaximizeIcon = createIcon("Maximize", <path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" />);
+
 export const XIcon = createIcon("X", <path d="M6 6l12 12M18 6 6 18" />);
 
 export const CheckIcon = createIcon("Check", <path d="M4 12.5l5 5 11-11" />);

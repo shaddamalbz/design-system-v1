@@ -2311,3 +2311,20 @@ p {
     display: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Org chart page
+   -------------------------------------------------------------------------- */
+.pg-org-find {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-2);
+}
+.pg-org-find-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  min-height: var(--leading-xs);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}

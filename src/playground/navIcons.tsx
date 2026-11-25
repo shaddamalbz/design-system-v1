@@ -54,6 +54,17 @@ export const DialogGlyphIcon = createIcon(
   </>,
 );
 
+/* One box over two, joined by an elbow */
+export const OrgChartGlyphIcon = createIcon(
+  "OrgChartGlyph",
+  <>
+    <rect x="9" y="3.5" width="6" height="5" rx="1.5" />
+    <rect x="3.5" y="15.5" width="6" height="5" rx="1.5" />
+    <rect x="14.5" y="15.5" width="6" height="5" rx="1.5" />
+    <path d="M12 8.5V12M6.5 15.5V12h11v3.5" />
+  </>,
+);
+
 /* A text box with a caret */
 export const TextFieldGlyphIcon = createIcon(
   "TextFieldGlyph",

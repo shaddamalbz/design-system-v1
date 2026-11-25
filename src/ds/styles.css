@@ -8,6 +8,7 @@
 @import "./components/sidebar/sidebar.css";
 @import "./components/tooltip/tooltip.css";
 @import "./components/dialog/dialog.css";
+@import "./components/org-chart/org-chart.css";
 @import "./components/field/field.css";
 @import "./components/input/input.css";
 @import "./components/textarea/textarea.css";

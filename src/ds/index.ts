@@ -4,6 +4,7 @@ export * from "./components/tabs";
 export * from "./components/sidebar";
 export * from "./components/tooltip";
 export * from "./components/dialog";
+export * from "./components/org-chart";
 export * from "./components/field";
 export * from "./components/input";
 export * from "./components/textarea";

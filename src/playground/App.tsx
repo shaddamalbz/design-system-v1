@@ -23,6 +23,7 @@ import { TooltipPage } from "./pages/TooltipPage";
 import { TextFieldPage } from "./pages/TextFieldPage";
 import { CheckboxPage } from "./pages/CheckboxPage";
 import { DialogPage } from "./pages/DialogPage";
+import { OrgChartPage } from "./pages/OrgChartPage";
 import { RadioPage } from "./pages/RadioPage";
 import { SwitchPage } from "./pages/SwitchPage";
 import { ButtonPage } from "./pages/ButtonPage";
@@ -40,6 +41,7 @@ import {
   CheckboxGlyphIcon,
   ColorsIcon,
   DialogGlyphIcon,
+  OrgChartGlyphIcon,
   RadioGlyphIcon,
   ShapeIcon,
   SidebarGlyphIcon,
@@ -88,6 +90,13 @@ const ROUTES: Route[] = [
     render: () => <CheckboxPage />,
   },
   { path: "dialog", label: "Dialog", group: "Components", icon: <DialogGlyphIcon />, render: () => <DialogPage /> },
+  {
+    path: "org-chart",
+    label: "Org chart",
+    group: "Components",
+    icon: <OrgChartGlyphIcon />,
+    render: () => <OrgChartPage />,
+  },
   { path: "radio", label: "Radio group", group: "Components", icon: <RadioGlyphIcon />, render: () => <RadioPage /> },
   {
     path: "sidebar",

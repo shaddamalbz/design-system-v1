@@ -31,6 +31,7 @@ import { AccessibleNameDemo } from "./AccessibleNameDemo";
 import { IndeterminateDemo } from "./IndeterminateDemo";
 import { NonTextContrastDemo } from "./NonTextContrastDemo";
 import { CharacterRampDemo } from "./CharacterRampDemo";
+import { SpatialVirtualizationDemo } from "./SpatialVirtualizationDemo";
 import "./demos.css";
 import "./motion-demos.css";
 import "./form-demos.css";
@@ -843,8 +844,11 @@ export const TERMS: Term[] = [
       },
     ],
     demo: DirectManipulationDemo,
-    usedIn: [{ label: "Sidebar resize edge", href: "#/sidebar" }],
-    related: ["staggered-animation", "feedforward"],
+    usedIn: [
+      { label: "Sidebar resize edge", href: "#/sidebar" },
+      { label: "Org chart pan and zoom", href: "#/org-chart" },
+    ],
+    related: ["staggered-animation", "feedforward", "spatial-virtualization"],
   },
   {
     id: "validation-timing",
@@ -1039,6 +1043,77 @@ export const TERMS: Term[] = [
     demo: CharacterRampDemo,
     usedIn: [{ label: "ASCII field", href: "#/backgrounds/ascii-field" }],
     related: ["reduced-motion"],
+  },
+  {
+    id: "spatial-virtualization",
+    term: "Spatial virtualization",
+    aka: ["2D virtualization", "Viewport culling", "2D windowing"],
+    category: "Engineering",
+    summary:
+      "On a pan-and-zoom surface, render only the items inside the visible area, and find them with a spatial index instead of checking every item. The 2D version of a virtualized list.",
+    sections: [
+      {
+        title: "From a list to a plane",
+        body: (
+          <>
+            <p>
+              A virtual list finds its visible rows with one division: <code>first = ⌊scrollTop / rowHeight⌋</code>.
+              That works because rows sit on one axis. Items on a plane can be anywhere, and the viewport is a
+              rectangle that also changes size when you zoom. Checking every item each frame is O(n): fine for 500,
+              too slow for 50,000.
+            </p>
+            <p>
+              A <strong>spatial index</strong> answers “what overlaps this rectangle?” by looking only near it. The
+              simplest is a uniform grid: cut the world into square cells and list each item in the cells it touches.
+              A query visits the cells under the viewport and checks only their items.
+            </p>
+          </>
+        ),
+      },
+      {
+        title: "The pieces",
+        body: (
+          <ul>
+            <li>
+              <strong>Known boxes.</strong> Every item's position and size must be computable without rendering it,
+              like fixed row heights in a list. Measuring the DOM to find out defeats the purpose.
+            </li>
+            <li>
+              <strong>A spatial index:</strong> a grid when items are similar in size and fairly even; a quadtree or
+              R-tree for very mixed sizes or very clumpy data.
+            </li>
+            <li>
+              <strong>Overscan:</strong> render a margin around the viewport, so a small pan only moves a CSS
+              transform and needs no new query or render.
+            </li>
+            <li>
+              <strong>Level of detail.</strong> Zoomed all the way out, everything is in view and culling stops
+              helping. Draw simpler marks there (canvas boxes, or a cached bitmap of the whole world) instead of full
+              items.
+            </li>
+          </ul>
+        ),
+      },
+      {
+        title: "Watch out",
+        body: (
+          <ul>
+            <li>
+              Items that don't exist can't be found with the browser's find-in-page or browsed by a screen reader.
+              Provide search, keyboard navigation and announcements yourself.
+            </li>
+            <li>The focused or selected item must stay mounted, even when it's scrolled out of view.</li>
+            <li>
+              Keep the camera out of React state: apply pan and zoom straight to the DOM, and re-render only when the
+              set of visible items changes.
+            </li>
+          </ul>
+        ),
+      },
+    ],
+    demo: SpatialVirtualizationDemo,
+    usedIn: [{ label: "Org chart (100,000 people)", href: "#/org-chart" }],
+    related: ["direct-manipulation"],
   },
 ];
 

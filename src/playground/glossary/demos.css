@@ -724,3 +724,60 @@
     scale: none;
   }
 }
+
+/* ---- Spatial virtualization ---- */
+.gd-sv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.gd-sv-panel {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+}
+.gd-sv-panel figcaption {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-muted);
+}
+.gd-sv-map,
+.gd-sv-lens {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-subtle);
+}
+.gd-sv-map {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.gd-sv-map:active {
+  cursor: grabbing;
+}
+.gd-sv-map:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+.gd-sv-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.gd-sv-probe {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.gd-sv-item {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  background: var(--_c);
+  box-shadow: inset 0 0 0 1px light-dark(rgb(0 0 0 / 0.12), rgb(255 255 255 / 0.12));
+}
