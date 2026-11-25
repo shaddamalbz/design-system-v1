@@ -1,5 +1,6 @@
-import { useId, useState, type CSSProperties } from "react";
+import { useEffect, useId, useState, type CSSProperties } from "react";
 import "./designStyles.css";
+import { MangaFilters, loadMangaFont, mangaBoilVars, mangaClick } from "./mangaFx";
 
 /* One card, many skins: the same markup, styled by `.st-<id>`. Keeping the
    content identical makes it easy to compare styles fairly. */
@@ -7,8 +8,15 @@ import "./designStyles.css";
 export function StyleSample({ id, vars }: { id: string; vars?: Record<string, string> }) {
   const [on, setOn] = useState(true);
   const labelId = useId();
+  const fxId = useId().replace(/[^\w-]/g, "");
+  const manga = id === "manga";
+  useEffect(() => {
+    if (manga) loadMangaFont();
+  }, [manga]);
+  const style = (manga ? { ...mangaBoilVars(fxId), ...vars } : vars) as CSSProperties;
   return (
-    <div className={`st-scene st-${id}`} style={vars as CSSProperties}>
+    <div className={`st-scene st-${id}`} style={style} onClick={manga ? mangaClick : undefined}>
+      {manga && <MangaFilters prefix={fxId} />}
       {id === "glassmorphism" && (
         <div className="st-blobs" aria-hidden="true">
           <span />
@@ -46,6 +54,7 @@ export function StyleSample({ id, vars }: { id: string; vars?: Record<string, st
           </button>
         </div>
       </div>
+      {manga && <div className="mg-layer" aria-hidden="true" />}
     </div>
   );
 }

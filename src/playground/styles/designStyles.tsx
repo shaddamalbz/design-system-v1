@@ -32,6 +32,8 @@ export interface DesignStyle {
   traits?: string[];
   /** The core CSS, trimmed to what defines the look */
   recipe?: string;
+  /** JS behind the style's motion, when CSS alone isn't enough */
+  script?: string;
   goodFor?: string[];
   avoid?: string[];
   a11y?: string[];
@@ -244,6 +246,133 @@ export const STYLES: DesignStyle[] = [
     a11y: [
       "Classic flat palettes (like #3498db or #2ecc71 with white text) fail contrast. This sample uses darker shades for that reason.",
       "Make buttons look like buttons: shape, color, or a subtle shadow.",
+    ],
+  },
+  {
+    id: "manga",
+    name: "Manga",
+    aka: ["Anime UI", "Comic SFX UI"],
+    era: "A recent, niche trend (mid-2020s) that builds on neo-brutalism and borrows from manga panels.",
+    summary:
+      "Ink outlines and hard shadows like neo-brutalism, plus the visual language of manga: screentone dots, focus lines, and sound-effect lettering (ドン!) that bursts out when you press something. The motion is the style, and it's all generated in code, so it needs no image assets. Press Export, Preview or the toggle to see it.",
+    traits: [
+      "Ink outlines and hard offset shadows (the neo-brutalist base)",
+      "Screentone dots and focus lines as background texture",
+      "Sound-effect lettering (ドン!, ポン) that pops out on press",
+      "Dust clouds, sparkles, and squash-and-stretch on interaction",
+      "Hand-drawn 'line boil': outlines wobble slightly, like redrawn animation frames",
+    ],
+    recipe: `/* Ink + hard shadow: the neo-brutalist base */
+.manga-button {
+  background: #5b4bff;
+  color: #fff;
+  border: 2.5px solid #14121f;
+  border-radius: 10px;
+  box-shadow: 4px 4px 0 #14121f;
+  font-weight: 800;
+  font-style: italic;
+}
+.manga-button:active { translate: 4px 4px; box-shadow: 0 0 0 #14121f; }
+
+/* Screentone + focus lines: just gradients */
+.panel::before {
+  background: radial-gradient(#0003 1.3px, transparent 1.7px) 0 0 / 7px 7px;
+  mask-image: linear-gradient(140deg, #000, transparent 45%);
+}
+.panel::after {
+  background: repeating-conic-gradient(#0003 0 .6deg, transparent .6deg 5deg);
+  mask-image: radial-gradient(transparent 55%, #000);
+}
+
+/* Sound-effect lettering: live text in a web font, not an image.
+   Load only the glyphs you use: ...?family=Dela+Gothic+One&text=ドンポ! */
+.sfx {
+  font-family: "Dela Gothic One", sans-serif;
+  color: #fff;
+  -webkit-text-stroke: 7px #14121f;
+  paint-order: stroke fill; /* stroke behind the fill */
+  text-shadow: 3px 3px 0 #5b4bff;
+}
+
+/* Hand-drawn "line boil": step through 3 noise filters at ~8fps.
+   <filter id="boil-0">
+     <feTurbulence type="fractalNoise" baseFrequency=".035" seed="1"/>
+     <feDisplacementMap in="SourceGraphic" scale="3"/>
+   </filter>  …same for boil-1 and boil-2 with seed 2 and 3 */
+.outline { filter: url(#boil-0); animation: boil .4s steps(1) infinite; }
+@keyframes boil {
+  33% { filter: url(#boil-1); }
+  67% { filter: url(#boil-2); }
+}`,
+    script: `// One burst = lettering + dust clouds (+ focus lines and sparkles in
+// the full version). Each piece is a tiny DOM/SVG node animated with the
+// Web Animations API, randomized so no two clicks look the same.
+function burst(layer, target, text) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const box = layer.getBoundingClientRect();
+  const r = target.getBoundingClientRect();
+  const fx = document.createElement("div");
+  fx.className = "fx"; // position: absolute; width: 0; height: 0
+  fx.style.left = \`\${r.left - box.left + r.width / 2}px\`;
+  fx.style.top = \`\${r.top - box.top + r.height / 2}px\`;
+  layer.append(fx);
+
+  const sfx = document.createElement("span");
+  sfx.className = "sfx";
+  sfx.textContent = text; // "ドン!"
+  fx.append(sfx);
+  const tilt = -4 - Math.random() * 10;
+  const at = (y, s, rot) => \`translate(-50%, \${y}px) rotate(\${rot}deg) scale(\${s})\`;
+  const anims = [
+    sfx.animate([
+      { transform: at(-50, 0.2, tilt - 25), opacity: 0 },
+      { transform: at(-76, 1.25, tilt), opacity: 1, offset: 0.16 }, // overshoot
+      { transform: at(-72, 1, tilt), offset: 0.3 },                  // settle
+      { transform: at(-88, 0.9, tilt), opacity: 0 },                 // drift away
+    ], { duration: 900, fill: "both" }),
+  ];
+
+  for (let i = 0; i < 8; i++) {
+    const side = i % 2 ? 1 : -1;
+    const puff = document.createElement("div");
+    puff.className = "puff";
+    puff.innerHTML = CLOUD_SVG; // 3 outlined circles
+    fx.append(puff);
+    const x = side * Math.random() * r.width / 2, y = r.height / 2;
+    const dx = side * (16 + Math.random() * 28), dy = Math.random() * 14;
+    anims.push(puff.animate([
+      { transform: \`translate(\${x}px, \${y}px) scale(.3)\` },
+      { transform: \`translate(\${x + dx}px, \${y + dy}px) scale(.4)\`, opacity: 0 },
+    ], { duration: 520 + Math.random() * 240, easing: "cubic-bezier(.2,.8,.3,1)", fill: "both" }));
+  }
+
+  Promise.allSettled(anims.map((a) => a.finished)).then(() => fx.remove());
+}
+
+// Event delegation: one listener for every button in the panel.
+panel.addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (btn) burst(fxLayer, btn, "ドン!");
+});`,
+    goodFor: [
+      "Playful brands, games, and anime or fan communities",
+      "Moments worth celebrating: confirm, like, level up, success",
+      "Portfolios and landing pages that want personality",
+    ],
+    avoid: [
+      "Frequent, repetitive actions: a burst on every keystroke gets tiring fast",
+      "Serious, dense, or enterprise UIs",
+      "Destructive actions: a celebratory ドン! on Delete sends the wrong signal",
+    ],
+    a11y: [
+      "Skip the burst entirely under prefers-reduced-motion; the press state alone still confirms the click. Stop the line boil too.",
+      "Keep the effect layer aria-hidden and pointer-events: none, so it never blocks clicks or reaches screen readers.",
+      "Sound-effect lettering is decoration. The real label (Export) must still say what the button does.",
+      "Keep bursts short (under 1s) and avoid large white or black flashes (WCAG 2.3.1).",
+    ],
+    controls: [
+      { prop: "--mg-o", label: "Shadow offset", min: 0, max: 10, step: 1, value: 4, unit: "px" },
+      { prop: "--mg-particles", label: "Dust clouds", min: 0, max: 16, step: 1, value: 8, unit: "" },
     ],
   },
 ];

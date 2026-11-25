@@ -81,6 +81,12 @@ export function StylePage({ style }: { style: DesignStyle }) {
         </Section>
       )}
 
+      {style.script && (
+        <Section title="Script" description="The JS behind the motion: CSS alone can't spawn randomized pieces per click.">
+          <CodeBlock code={style.script} label={`${style.name} script`} />
+        </Section>
+      )}
+
       {(style.goodFor || style.avoid) && (
         <Section title="When to use it">
           <div className="pg-usage-grid">
